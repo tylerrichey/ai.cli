@@ -1,0 +1,10 @@
+using Ai.Cli.Generation;
+
+namespace Ai.Cli.OpenRouter;
+
+public interface IOpenRouterClient
+{
+    Task<IReadOnlyList<string>> GetModelIdsAsync(string apiKey, CancellationToken cancellationToken);
+
+    Task<string> GenerateCommandAsync(GenerateCommandRequest requestModel, CancellationToken cancellationToken);
+}
