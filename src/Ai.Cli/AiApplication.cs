@@ -11,12 +11,14 @@ public sealed class AiApplication(
     IClipboardService clipboardService,
     TextWriter standardOutput,
     TextWriter standardError,
+    ICommandExecutor? commandExecutor = null,
     Func<string>? versionProvider = null)
 {
     private readonly IAiApplicationService _applicationService = applicationService;
     private readonly IClipboardService _clipboardService = clipboardService;
     private readonly TextWriter _standardOutput = standardOutput;
     private readonly TextWriter _standardError = standardError;
+    private readonly ICommandExecutor? _commandExecutor = commandExecutor;
     private readonly Func<string> _versionProvider = versionProvider ?? BuildVersion.GetDisplayVersion;
 
     public Task<int> RunAsync(string[] args, CancellationToken cancellationToken)
@@ -42,6 +44,10 @@ public sealed class AiApplication(
         {
             Description = "Override the configured OpenRouter model ID."
         };
+        var executeOption = new Option<bool>("--execute", ["-x"])
+        {
+            Description = "Execute the generated command after displaying it and prompting for confirmation."
+        };
         var timingOption = new Option<bool>("--timing")
         {
             Description = "Print timing information for the AI call and overall request to stderr."
@@ -58,6 +64,7 @@ public sealed class AiApplication(
             shellOption,
             modelsOption,
             modelOption,
+            executeOption,
             timingOption,
             goalArgument
         };
@@ -68,6 +75,7 @@ public sealed class AiApplication(
             long? modelsElapsedMilliseconds = null;
             long? aiElapsedMilliseconds = null;
             long? clipboardElapsedMilliseconds = null;
+            long? executeElapsedMilliseconds = null;
             var timingEnabled = parseResult.GetValue(timingOption);
 
             try
@@ -143,6 +151,43 @@ public sealed class AiApplication(
                     aiElapsedMilliseconds = aiStopwatch.ElapsedMilliseconds;
                 }
 
+                if (parseResult.GetValue(executeOption))
+                {
+                    await _standardError.WriteLineAsync(generatedCommand.RawCommand);
+
+                    var executor = _commandExecutor ?? new ProcessCommandExecutor();
+
+                    if (!executor.IsInteractive)
+                    {
+                        await _standardError.WriteLineAsync("Cannot prompt for confirmation: input is not interactive.");
+                        return 1;
+                    }
+
+                    await _standardError.WriteAsync("Press Enter to execute, any other key to cancel: ");
+                    var keyInfo = executor.ReadKey();
+                    await _standardError.WriteLineAsync();
+
+                    if (keyInfo.Key != ConsoleKey.Enter)
+                    {
+                        await _standardError.WriteLineAsync("Cancelled.");
+                        return 0;
+                    }
+
+                    var (fileName, arguments) = ShellCommandFormatter.GetExecutionCommand(
+                        generatedCommand.RawCommand, generatedCommand.ShellTarget);
+
+                    var executeStopwatch = Stopwatch.StartNew();
+                    try
+                    {
+                        return await executor.ExecuteAsync(fileName, arguments, cancellationToken);
+                    }
+                    finally
+                    {
+                        executeStopwatch.Stop();
+                        executeElapsedMilliseconds = executeStopwatch.ElapsedMilliseconds;
+                    }
+                }
+
                 var finalCommand = ShellCommandFormatter.FormatForOutput(
                     generatedCommand.RawCommand, generatedCommand.ShellTarget);
 
@@ -194,6 +239,11 @@ public sealed class AiApplication(
                     if (clipboardElapsedMilliseconds is not null)
                     {
                         await _standardError.WriteLineAsync($"timing.clipboard_ms={clipboardElapsedMilliseconds.Value}");
+                    }
+
+                    if (executeElapsedMilliseconds is not null)
+                    {
+                        await _standardError.WriteLineAsync($"timing.execute_ms={executeElapsedMilliseconds.Value}");
                     }
 
                     await _standardError.WriteLineAsync($"timing.total_ms={totalStopwatch.ElapsedMilliseconds}");

@@ -4,6 +4,18 @@ namespace Ai.Cli.Output;
 
 public static class ShellCommandFormatter
 {
+    public static (string FileName, string[] Arguments) GetExecutionCommand(string commandBody, ShellTarget shellTarget)
+    {
+        var trimmedCommand = commandBody.Trim();
+        return shellTarget switch
+        {
+            ShellTarget.PowerShell => ("pwsh", ["-Command", trimmedCommand]),
+            ShellTarget.Bash => ("bash", ["-c", trimmedCommand]),
+            ShellTarget.Zsh => ("zsh", ["-c", trimmedCommand]),
+            _ => throw new ArgumentOutOfRangeException(nameof(shellTarget), shellTarget, null)
+        };
+    }
+
     public static string FormatForOutput(string commandBody, ShellTarget shellTarget)
     {
         return shellTarget switch

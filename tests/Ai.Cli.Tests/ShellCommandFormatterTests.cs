@@ -6,6 +6,41 @@ namespace Ai.Cli.Tests;
 public sealed class ShellCommandFormatterTests
 {
     [Fact]
+    public void GetExecutionCommand_Bash_ReturnsBashDashC()
+    {
+        var (fileName, arguments) = ShellCommandFormatter.GetExecutionCommand("ls -la", ShellTarget.Bash);
+
+        Assert.Equal("bash", fileName);
+        Assert.Equal(["-c", "ls -la"], arguments);
+    }
+
+    [Fact]
+    public void GetExecutionCommand_Zsh_ReturnsZshDashC()
+    {
+        var (fileName, arguments) = ShellCommandFormatter.GetExecutionCommand("ls -la", ShellTarget.Zsh);
+
+        Assert.Equal("zsh", fileName);
+        Assert.Equal(["-c", "ls -la"], arguments);
+    }
+
+    [Fact]
+    public void GetExecutionCommand_PowerShell_ReturnsPwshDashCommand()
+    {
+        var (fileName, arguments) = ShellCommandFormatter.GetExecutionCommand("Get-ChildItem", ShellTarget.PowerShell);
+
+        Assert.Equal("pwsh", fileName);
+        Assert.Equal(["-Command", "Get-ChildItem"], arguments);
+    }
+
+    [Fact]
+    public void GetExecutionCommand_TrimsWhitespace()
+    {
+        var (_, arguments) = ShellCommandFormatter.GetExecutionCommand("  ls -la  ", ShellTarget.Bash);
+
+        Assert.Equal(["-c", "ls -la"], arguments);
+    }
+
+    [Fact]
     public void FormatForOutput_Bash_UsesBashDashLcForPlainCommands()
     {
         var result = ShellCommandFormatter.FormatForOutput("printf 'hello'", ShellTarget.Bash);

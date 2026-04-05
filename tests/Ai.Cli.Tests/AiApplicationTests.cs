@@ -227,6 +227,129 @@ public sealed class AiApplicationTests
     }
 
     [Fact]
+    public async Task RunAsync_Execute_DisplaysRawCommandAndExecutesOnEnter()
+    {
+        var service = new StubAiApplicationService
+        {
+            GeneratedResult = new GeneratedCommand("ls -la", ShellTarget.Bash)
+        };
+        var clipboard = new RecordingClipboardService();
+        var executor = new StubCommandExecutor
+        {
+            IsInteractive = true,
+            KeyToReturn = new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false),
+            ExitCodeToReturn = 0
+        };
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, executor);
+
+        var exitCode = await application.RunAsync(["--execute", "--bash", "list", "files"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(string.Empty, stdout.ToString());
+        Assert.Contains("ls -la", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Null(clipboard.LastText);
+        Assert.Equal("bash", executor.LastFileName);
+        Assert.Equal(["-c", "ls -la"], executor.LastArguments);
+    }
+
+    [Fact]
+    public async Task RunAsync_Execute_CancelsOnNonEnterKey()
+    {
+        var service = new StubAiApplicationService
+        {
+            GeneratedResult = new GeneratedCommand("ls -la", ShellTarget.Bash)
+        };
+        var clipboard = new RecordingClipboardService();
+        var executor = new StubCommandExecutor
+        {
+            IsInteractive = true,
+            KeyToReturn = new ConsoleKeyInfo('q', ConsoleKey.Q, false, false, false)
+        };
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, executor);
+
+        var exitCode = await application.RunAsync(["--execute", "--bash", "list", "files"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Cancelled", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Null(executor.LastFileName);
+    }
+
+    [Fact]
+    public async Task RunAsync_Execute_ReturnsErrorWhenNotInteractive()
+    {
+        var service = new StubAiApplicationService
+        {
+            GeneratedResult = new GeneratedCommand("ls -la", ShellTarget.Bash)
+        };
+        var clipboard = new RecordingClipboardService();
+        var executor = new StubCommandExecutor
+        {
+            IsInteractive = false
+        };
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, executor);
+
+        var exitCode = await application.RunAsync(["--execute", "--bash", "list", "files"], CancellationToken.None);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("not interactive", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Null(executor.LastFileName);
+    }
+
+    [Fact]
+    public async Task RunAsync_Execute_ReturnsProcessExitCode()
+    {
+        var service = new StubAiApplicationService
+        {
+            GeneratedResult = new GeneratedCommand("exit 42", ShellTarget.Bash)
+        };
+        var clipboard = new RecordingClipboardService();
+        var executor = new StubCommandExecutor
+        {
+            IsInteractive = true,
+            KeyToReturn = new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false),
+            ExitCodeToReturn = 42
+        };
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, executor);
+
+        var exitCode = await application.RunAsync(["-x", "--bash", "fail"], CancellationToken.None);
+
+        Assert.Equal(42, exitCode);
+    }
+
+    [Fact]
+    public async Task RunAsync_Execute_UsesPwshForPowerShellTarget()
+    {
+        var service = new StubAiApplicationService
+        {
+            GeneratedResult = new GeneratedCommand("Get-ChildItem", ShellTarget.PowerShell)
+        };
+        var clipboard = new RecordingClipboardService();
+        var executor = new StubCommandExecutor
+        {
+            IsInteractive = true,
+            KeyToReturn = new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false),
+            ExitCodeToReturn = 0
+        };
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, executor);
+
+        var exitCode = await application.RunAsync(["--execute", "list", "files"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal("pwsh", executor.LastFileName);
+        Assert.Equal(["-Command", "Get-ChildItem"], executor.LastArguments);
+    }
+
+    [Fact]
     public async Task RunAsync_ReturnsErrorWhenGoalIsMissing()
     {
         var service = new StubAiApplicationService();
@@ -284,6 +407,31 @@ public sealed class AiApplicationTests
         public Task SetTextAsync(string text, CancellationToken cancellationToken)
         {
             throw new InvalidOperationException("Clipboard unavailable.");
+        }
+    }
+
+    private sealed class StubCommandExecutor : ICommandExecutor
+    {
+        public bool IsInteractive { get; set; }
+
+        public ConsoleKeyInfo KeyToReturn { get; set; }
+
+        public int ExitCodeToReturn { get; set; }
+
+        public string? LastFileName { get; private set; }
+
+        public IReadOnlyList<string>? LastArguments { get; private set; }
+
+        public ConsoleKeyInfo ReadKey()
+        {
+            return KeyToReturn;
+        }
+
+        public Task<int> ExecuteAsync(string fileName, IReadOnlyList<string> arguments, CancellationToken cancellationToken)
+        {
+            LastFileName = fileName;
+            LastArguments = arguments;
+            return Task.FromResult(ExitCodeToReturn);
         }
     }
 }

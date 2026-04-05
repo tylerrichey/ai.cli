@@ -11,6 +11,7 @@ var application = new AiApplication(
     new DefaultAiApplicationService(new OpenRouterClient(httpClient)),
     new SystemClipboardService(),
     Console.Out,
-    Console.Error);
+    Console.Error,
+    new ProcessCommandExecutor());
 
 return await application.RunAsync(args, CancellationToken.None);

@@ -3,3 +3,7 @@
 .nuget/
 **/bin/
 **/obj/
+
+.tmp-tests
+
+.claude/settings.local.json
