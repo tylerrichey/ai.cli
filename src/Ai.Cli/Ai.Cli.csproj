@@ -9,6 +9,7 @@
     <ToolCommandName>ai</ToolCommandName>
     <PackageId>Ai.Cli</PackageId>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/tylerrichey/ai-pwsh</RepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>
