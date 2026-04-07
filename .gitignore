@@ -7,3 +7,4 @@
 .tmp-tests
 
 .claude/settings.local.json
+.vs
