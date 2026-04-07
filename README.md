@@ -7,6 +7,7 @@
 - `ai <goal...>` generates a PowerShell command, prints it, copies it to the clipboard, and in PowerShell prompts for Enter-to-execute in the current session.
 - `ai --bash <goal...>` generates a bash command body and prints it as `bash -lc "<command>"`.
 - `ai --shell <target> <goal...>` generates a command for the specified shell (`powershell`, `bash`, `zsh`).
+- `ai -x <goal...>` / `ai --execute <goal...>` generates a command, displays it, prompts for Enter-to-confirm, and runs it directly via the target shell. Works cross-platform without the PowerShell wrapper.
 - `ai --models` lists available OpenRouter model IDs alphabetically.
 - `ai --model <model-id> <goal...>` overrides the configured default model.
 - `ai --version` prints the built tool version.
@@ -75,6 +76,10 @@ For a first-time global install instead of an update:
 .\scripts\update-tool.ps1 -Mode Install
 ```
 
+## Release
+
+Pushing a tag matching `v*` (e.g. `v1.0.0`) triggers a GitHub Actions workflow that packs the tool and publishes the NuGet package to nuget.org. The tag name (minus the `v` prefix) is used as the package version.
+
 The managed wrapper script is written to:
 
 - Windows PowerShell or `pwsh`: `%USERPROFILE%\.config\ai\powershell-wrapper.ps1`
@@ -96,6 +101,12 @@ Press Enter to execute, any other key to cancel
 ```
 
 Press `Enter` to run the command in your current PowerShell session. Press any other key to abandon it. If you want the raw generate-only behavior, call `ai.exe ...` directly.
+
+Generate and execute a command directly (prompts for confirmation):
+
+```powershell
+ai -x list all files in the current directory
+```
 
 Generate a bash command wrapper:
 
