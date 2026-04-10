@@ -89,7 +89,7 @@ Set-StrictMode -Version Latest
 `$ErrorActionPreference = 'Stop'
 
 `$script:AiWrapperDefaultGeneratorPath = '$escapedGeneratorPath'
-`$script:AiWrapperPassThroughOptions = @('--models', '--version', '-v', '--help', '-h', '-?')
+`$script:AiWrapperPassThroughOptions = @('--models', '--version', '-v', '--question', '-q', '--help', '-h', '-?')
 
 function Resolve-AiWrapperGeneratorPath {
     if (-not [string]::IsNullOrWhiteSpace(`$env:AI_WRAPPER_GENERATOR_PATH)) {

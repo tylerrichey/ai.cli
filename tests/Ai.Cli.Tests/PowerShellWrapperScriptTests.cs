@@ -248,6 +248,62 @@ public sealed class PowerShellWrapperScriptTests
         Assert.DoesNotContain("Cancelled.", standardOutput, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void WrapperFunction_PassesThroughQuestionsWithoutPrompt()
+    {
+        var repositoryRoot = GetRepositoryRoot();
+        var scriptPath = Path.Combine(repositoryRoot, "scripts", "install-powershell-wrapper.ps1");
+        var tempDirectory = CreateTemporaryDirectory(repositoryRoot);
+        var profilePath = Path.Combine(tempDirectory, "Microsoft.PowerShell_profile.ps1");
+        var wrapperPath = Path.Combine(tempDirectory, "ai-wrapper.ps1");
+        var fakeGeneratorPath = Path.Combine(tempDirectory, "fake-ai.ps1");
+
+        File.WriteAllText(
+            fakeGeneratorPath,
+            """
+            param([Parameter(ValueFromRemainingArguments = $true)][string[]]$CommandArgs)
+
+            if ($CommandArgs -contains '-q') {
+                'answer text'
+                exit 0
+            }
+
+            'Write-Output "unexpected"'
+            """);
+
+        using (var installProcess = StartPowerShellFile(
+                   repositoryRoot,
+                   scriptPath,
+                   "-ProfilePath",
+                   profilePath,
+                   "-WrapperPath",
+                   wrapperPath,
+                   "-GeneratorPath",
+                   fakeGeneratorPath))
+        {
+            installProcess.WaitForExit();
+            Assert.Equal(0, installProcess.ExitCode);
+        }
+
+        var command = $". '{EscapeForSingleQuotedPowerShell(wrapperPath)}'; ai -q what is this";
+        using var process = StartPowerShellCommand(
+            repositoryRoot,
+            command,
+            new Dictionary<string, string?>
+            {
+                ["AI_WRAPPER_DECISION"] = "cancel"
+            });
+
+        var standardOutput = process.StandardOutput.ReadToEnd();
+        var standardError = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        Assert.Equal(0, process.ExitCode);
+        Assert.Equal(string.Empty, standardError);
+        Assert.Contains("answer text", standardOutput, StringComparison.Ordinal);
+        Assert.DoesNotContain("Cancelled.", standardOutput, StringComparison.Ordinal);
+    }
+
     private static int CountOccurrences(string source, string pattern)
     {
         var count = 0;

@@ -27,18 +27,43 @@ public sealed class DefaultAiApplicationService(
             configuration,
             request.ShellTarget,
             operatingSystem);
-        var directoryContext = DirectoryContextCollector.Collect(_currentDirectoryProvider());
+        var currentDirectory = _currentDirectoryProvider();
+        var directoryContext = DirectoryContextCollector.Collect(currentDirectory);
+        var fileContexts = FileContextCollector.Collect(currentDirectory, request.IncludedFiles);
         var prompt = GenerationPromptBuilder.Build(
             request.Goal,
             shellTarget,
             operatingSystem.ToString(),
-            directoryContext);
+            directoryContext,
+            fileContexts);
 
         var rawCommand = await _openRouterClient.GenerateCommandAsync(
             new GenerateCommandRequest(settings.ApiKey, settings.ModelId, prompt),
             cancellationToken);
 
         return new GeneratedCommand(rawCommand, shellTarget);
+    }
+
+    public async Task<string> AskQuestionAsync(AskQuestionRequest request, CancellationToken cancellationToken)
+    {
+        var operatingSystem = GetOperatingSystemKind();
+        var configuration = AiConfigurationLoader.Load(GetConfigPath(operatingSystem));
+        var settings = ConfigurationResolver.ResolveGenerationSettings(
+            configuration,
+            _environmentVariableReader("OPENROUTER_API_KEY"),
+            request.ModelOverride);
+        var currentDirectory = _currentDirectoryProvider();
+        var directoryContext = DirectoryContextCollector.Collect(currentDirectory);
+        var fileContexts = FileContextCollector.Collect(currentDirectory, request.IncludedFiles);
+        var prompt = QuestionPromptBuilder.Build(
+            request.Question,
+            operatingSystem.ToString(),
+            directoryContext,
+            fileContexts);
+
+        return await _openRouterClient.GenerateTextAsync(
+            new GenerateCommandRequest(settings.ApiKey, settings.ModelId, prompt),
+            cancellationToken);
     }
 
     public async Task<IReadOnlyList<string>> GetModelsAsync(CancellationToken cancellationToken)

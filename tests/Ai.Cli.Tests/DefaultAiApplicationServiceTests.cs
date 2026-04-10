@@ -39,7 +39,8 @@ public sealed class DefaultAiApplicationServiceTests : IDisposable
             new GenerateUserCommandRequest(
                 Goal: "list files",
                 ShellTarget: ShellTarget.PowerShell,
-                ModelOverride: "override-model"),
+                ModelOverride: "override-model",
+                IncludedFiles: []),
             CancellationToken.None);
 
         Assert.Equal("generated-command", result.RawCommand);
@@ -50,6 +51,90 @@ public sealed class DefaultAiApplicationServiceTests : IDisposable
         Assert.Contains("Goal: list files", client.LastGenerateRequest.Prompt, StringComparison.Ordinal);
         Assert.Contains("- alpha.txt", client.LastGenerateRequest.Prompt, StringComparison.Ordinal);
         Assert.Contains("- beta", client.LastGenerateRequest.Prompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GenerateCommandAsync_IncludesCollectedFileContextInPrompt()
+    {
+        var userProfile = Path.Combine(_rootPath, "profile-files");
+        var configDirectory = Path.Combine(userProfile, ".config", "ai");
+        var currentDirectory = Path.Combine(_rootPath, "cwd-files");
+        Directory.CreateDirectory(configDirectory);
+        Directory.CreateDirectory(currentDirectory);
+        File.WriteAllText(Path.Combine(configDirectory, "config.json"), """
+            {
+              "apiKey": "config-key",
+              "defaultModel": "config-model"
+            }
+            """);
+        File.WriteAllText(Path.Combine(currentDirectory, "notes.txt"), "use ripgrep first");
+
+        var client = new FakeOpenRouterClient();
+        var service = new DefaultAiApplicationService(
+            client,
+            currentDirectoryProvider: () => currentDirectory,
+            environmentVariableReader: name => name switch
+            {
+                "OPENROUTER_API_KEY" => "env-key",
+                "USERPROFILE" => userProfile,
+                _ => null
+            });
+
+        await service.GenerateCommandAsync(
+            new GenerateUserCommandRequest(
+                Goal: "search notes",
+                ShellTarget: ShellTarget.PowerShell,
+                ModelOverride: null,
+                IncludedFiles: ["notes.txt"]),
+            CancellationToken.None);
+
+        Assert.NotNull(client.LastGenerateRequest);
+        Assert.Contains("Included file context:", client.LastGenerateRequest!.Prompt, StringComparison.Ordinal);
+        Assert.Contains("Path: notes.txt", client.LastGenerateRequest.Prompt, StringComparison.Ordinal);
+        Assert.Contains("use ripgrep first", client.LastGenerateRequest.Prompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AskQuestionAsync_UsesTextGenerationAndIncludesFileContext()
+    {
+        var userProfile = Path.Combine(_rootPath, "profile-question");
+        var configDirectory = Path.Combine(userProfile, ".config", "ai");
+        var currentDirectory = Path.Combine(_rootPath, "cwd-question");
+        Directory.CreateDirectory(configDirectory);
+        Directory.CreateDirectory(currentDirectory);
+        File.WriteAllText(Path.Combine(configDirectory, "config.json"), """
+            {
+              "apiKey": "config-key",
+              "defaultModel": "config-model"
+            }
+            """);
+        File.WriteAllText(Path.Combine(currentDirectory, "notes.txt"), "use ripgrep first");
+
+        var client = new FakeOpenRouterClient();
+        var service = new DefaultAiApplicationService(
+            client,
+            currentDirectoryProvider: () => currentDirectory,
+            environmentVariableReader: name => name switch
+            {
+                "OPENROUTER_API_KEY" => "env-key",
+                "USERPROFILE" => userProfile,
+                _ => null
+            });
+
+        var result = await service.AskQuestionAsync(
+            new AskQuestionRequest(
+                Question: "What does notes.txt say?",
+                ModelOverride: "override-model",
+                IncludedFiles: ["notes.txt"]),
+            CancellationToken.None);
+
+        Assert.Equal("answer text", result);
+        Assert.NotNull(client.LastTextRequest);
+        Assert.Equal("env-key", client.LastTextRequest!.ApiKey);
+        Assert.Equal("override-model", client.LastTextRequest.ModelId);
+        Assert.Contains("Question: What does notes.txt say?", client.LastTextRequest.Prompt, StringComparison.Ordinal);
+        Assert.Contains("Path: notes.txt", client.LastTextRequest.Prompt, StringComparison.Ordinal);
+        Assert.Contains("use ripgrep first", client.LastTextRequest.Prompt, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -94,12 +179,20 @@ public sealed class DefaultAiApplicationServiceTests : IDisposable
     {
         public GenerateCommandRequest? LastGenerateRequest { get; private set; }
 
+        public GenerateCommandRequest? LastTextRequest { get; private set; }
+
         public string? LastApiKeyForModels { get; private set; }
 
         public Task<string> GenerateCommandAsync(GenerateCommandRequest requestModel, CancellationToken cancellationToken)
         {
             LastGenerateRequest = requestModel;
             return Task.FromResult("generated-command");
+        }
+
+        public Task<string> GenerateTextAsync(GenerateCommandRequest requestModel, CancellationToken cancellationToken)
+        {
+            LastTextRequest = requestModel;
+            return Task.FromResult("answer text");
         }
 
         public Task<IReadOnlyList<string>> GetModelIdsAsync(string apiKey, CancellationToken cancellationToken)

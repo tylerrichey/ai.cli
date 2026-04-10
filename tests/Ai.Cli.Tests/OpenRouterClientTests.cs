@@ -86,6 +86,29 @@ public sealed class OpenRouterClientTests
         Assert.Equal("Get-ChildItem | Sort-Object Name", command);
     }
 
+    [Fact]
+    public async Task GenerateTextAsync_PreservesMultilineContent()
+    {
+        using var handler = new RecordingHandler(
+            _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""
+                    {"choices":[{"message":{"content":"line one\r\nline two"}}]}
+                    """, Encoding.UTF8, "application/json")
+            }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://openrouter.ai/") };
+        var client = new OpenRouterClient(httpClient);
+
+        var answer = await client.GenerateTextAsync(
+            new GenerateCommandRequest(
+                ApiKey: "test-key",
+                ModelId: "openai/test-model",
+                Prompt: "Question: explain"),
+            CancellationToken.None);
+
+        Assert.Equal("line one" + Environment.NewLine + "line two", answer);
+    }
+
     private sealed class RecordingHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> responder) : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, Task<HttpResponseMessage>> _responder = responder;

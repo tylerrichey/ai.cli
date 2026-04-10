@@ -8,7 +8,8 @@ public static class GenerationPromptBuilder
         string goal,
         ShellTarget shellTarget,
         string operatingSystemDescription,
-        DirectoryContext directoryContext)
+        DirectoryContext directoryContext,
+        IReadOnlyList<FileContext> fileContexts)
     {
         var instructions = shellTarget switch
         {
@@ -36,6 +37,8 @@ public static class GenerationPromptBuilder
         {
             builder.Add($"Only the first 200 entries are included here out of {directoryContext.TotalEntries} total entries.");
         }
+
+        PromptContextFormatter.AddFileContext(builder, fileContexts);
 
         return string.Join(Environment.NewLine, builder);
     }

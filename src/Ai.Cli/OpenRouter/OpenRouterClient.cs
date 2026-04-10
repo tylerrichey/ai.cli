@@ -35,6 +35,25 @@ public sealed class OpenRouterClient(HttpClient httpClient) : IOpenRouterClient
 
     public async Task<string> GenerateCommandAsync(GenerateCommandRequest requestModel, CancellationToken cancellationToken)
     {
+        var content = await GenerateContentAsync(requestModel, cancellationToken);
+        return string.Join(
+            " ",
+            content
+                .Split(["\r\n", "\n", "\r"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+    }
+
+    public async Task<string> GenerateTextAsync(GenerateCommandRequest requestModel, CancellationToken cancellationToken)
+    {
+        var content = await GenerateContentAsync(requestModel, cancellationToken);
+        return content
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace("\r", "\n", StringComparison.Ordinal)
+            .Replace("\n", Environment.NewLine, StringComparison.Ordinal)
+            .TrimEnd();
+    }
+
+    private async Task<string> GenerateContentAsync(GenerateCommandRequest requestModel, CancellationToken cancellationToken)
+    {
         var payload = JsonSerializer.Serialize(
             new
             {
@@ -72,10 +91,7 @@ public sealed class OpenRouterClient(HttpClient httpClient) : IOpenRouterClient
             throw new InvalidOperationException("OpenRouter returned an empty command response.");
         }
 
-        return string.Join(
-            " ",
-            content
-                .Split(["\r\n", "\n", "\r"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        return content;
     }
 
     private static void AddHeaders(HttpRequestMessage request, string apiKey)

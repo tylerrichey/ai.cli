@@ -48,6 +48,14 @@ public sealed class AiApplication(
         {
             Description = "Execute the generated command after displaying it and prompting for confirmation."
         };
+        var questionOption = new Option<bool>("--question", ["-q"])
+        {
+            Description = "Ask a question and print the answer instead of generating a command."
+        };
+        var fileOption = new Option<string[]>("--file", ["-f"])
+        {
+            Description = "Include up to 3 files in the AI request context."
+        };
         var timingOption = new Option<bool>("--timing")
         {
             Description = "Print timing information for the AI call and overall request to stderr."
@@ -55,16 +63,18 @@ public sealed class AiApplication(
         var goalArgument = new Argument<string[]>("goal")
         {
             Arity = ArgumentArity.ZeroOrMore,
-            Description = "The natural-language goal to translate into a shell command."
+            Description = "The natural-language goal or question to send to the AI."
         };
 
-        var rootCommand = new RootCommand("Generate shell commands with OpenRouter.")
+        var rootCommand = new RootCommand("Generate shell commands or answers with OpenRouter.")
         {
             bashOption,
             shellOption,
             modelsOption,
             modelOption,
             executeOption,
+            questionOption,
+            fileOption,
             timingOption,
             goalArgument
         };
@@ -105,15 +115,35 @@ public sealed class AiApplication(
                 var goalTokens = parseResult.GetValue(goalArgument) ?? [];
                 if (goalTokens.Length == 0)
                 {
-                    await _standardError.WriteLineAsync("A goal is required unless --models is used.");
+                    await _standardError.WriteLineAsync("A goal or question is required unless --models is used.");
                     return 1;
                 }
 
                 var useBash = parseResult.GetValue(bashOption);
                 var shellValue = parseResult.GetValue(shellOption);
+                var useQuestionMode = parseResult.GetValue(questionOption);
+                var includedFiles = parseResult.GetValue(fileOption) ?? [];
                 if (useBash && shellValue is not null)
                 {
                     await _standardError.WriteLineAsync("--bash and --shell cannot be used together.");
+                    return 1;
+                }
+
+                if (useQuestionMode && parseResult.GetValue(executeOption))
+                {
+                    await _standardError.WriteLineAsync("-q and -x cannot be used together.");
+                    return 1;
+                }
+
+                if (useQuestionMode && useBash)
+                {
+                    await _standardError.WriteLineAsync("-q and --bash cannot be used together.");
+                    return 1;
+                }
+
+                if (useQuestionMode && shellValue is not null)
+                {
+                    await _standardError.WriteLineAsync("-q and --shell cannot be used together.");
                     return 1;
                 }
 
@@ -135,80 +165,93 @@ public sealed class AiApplication(
                 }
 
                 var aiStopwatch = Stopwatch.StartNew();
-                GeneratedCommand generatedCommand;
                 try
                 {
-                    generatedCommand = await _applicationService.GenerateCommandAsync(
+                    if (useQuestionMode)
+                    {
+                        var answer = await _applicationService.AskQuestionAsync(
+                            new AskQuestionRequest(
+                                Question: string.Join(" ", goalTokens),
+                                ModelOverride: parseResult.GetValue(modelOption),
+                                IncludedFiles: includedFiles),
+                            cancellationToken);
+
+                        await _standardOutput.WriteLineAsync(answer);
+                        return 0;
+                    }
+
+                    var generatedCommand = await _applicationService.GenerateCommandAsync(
                         new GenerateUserCommandRequest(
                             Goal: string.Join(" ", goalTokens),
                             ShellTarget: cliShellTarget,
-                            ModelOverride: parseResult.GetValue(modelOption)),
+                            ModelOverride: parseResult.GetValue(modelOption),
+                            IncludedFiles: includedFiles),
                         cancellationToken);
+
+                    if (parseResult.GetValue(executeOption))
+                    {
+                        await _standardError.WriteLineAsync(generatedCommand.RawCommand);
+
+                        var executor = _commandExecutor ?? new ProcessCommandExecutor();
+
+                        if (!executor.IsInteractive)
+                        {
+                            await _standardError.WriteLineAsync("Cannot prompt for confirmation: input is not interactive.");
+                            return 1;
+                        }
+
+                        await _standardError.WriteAsync("Press Enter to execute, any other key to cancel: ");
+                        var keyInfo = executor.ReadKey();
+                        await _standardError.WriteLineAsync();
+
+                        if (keyInfo.Key != ConsoleKey.Enter)
+                        {
+                            await _standardError.WriteLineAsync("Cancelled.");
+                            return 0;
+                        }
+
+                        var (fileName, arguments) = ShellCommandFormatter.GetExecutionCommand(
+                            generatedCommand.RawCommand, generatedCommand.ShellTarget);
+
+                        var executeStopwatch = Stopwatch.StartNew();
+                        try
+                        {
+                            return await executor.ExecuteAsync(fileName, arguments, cancellationToken);
+                        }
+                        finally
+                        {
+                            executeStopwatch.Stop();
+                            executeElapsedMilliseconds = executeStopwatch.ElapsedMilliseconds;
+                        }
+                    }
+
+                    var finalCommand = ShellCommandFormatter.FormatForOutput(
+                        generatedCommand.RawCommand, generatedCommand.ShellTarget);
+
+                    await _standardOutput.WriteLineAsync(finalCommand);
+
+                    var clipboardStopwatch = Stopwatch.StartNew();
+                    try
+                    {
+                        await _clipboardService.SetTextAsync(finalCommand, cancellationToken);
+                    }
+                    catch (Exception exception)
+                    {
+                        await _standardError.WriteLineAsync($"Warning: failed to copy command to clipboard: {exception.Message}");
+                    }
+                    finally
+                    {
+                        clipboardStopwatch.Stop();
+                        clipboardElapsedMilliseconds = clipboardStopwatch.ElapsedMilliseconds;
+                    }
+
+                    return 0;
                 }
                 finally
                 {
                     aiStopwatch.Stop();
                     aiElapsedMilliseconds = aiStopwatch.ElapsedMilliseconds;
                 }
-
-                if (parseResult.GetValue(executeOption))
-                {
-                    await _standardError.WriteLineAsync(generatedCommand.RawCommand);
-
-                    var executor = _commandExecutor ?? new ProcessCommandExecutor();
-
-                    if (!executor.IsInteractive)
-                    {
-                        await _standardError.WriteLineAsync("Cannot prompt for confirmation: input is not interactive.");
-                        return 1;
-                    }
-
-                    await _standardError.WriteAsync("Press Enter to execute, any other key to cancel: ");
-                    var keyInfo = executor.ReadKey();
-                    await _standardError.WriteLineAsync();
-
-                    if (keyInfo.Key != ConsoleKey.Enter)
-                    {
-                        await _standardError.WriteLineAsync("Cancelled.");
-                        return 0;
-                    }
-
-                    var (fileName, arguments) = ShellCommandFormatter.GetExecutionCommand(
-                        generatedCommand.RawCommand, generatedCommand.ShellTarget);
-
-                    var executeStopwatch = Stopwatch.StartNew();
-                    try
-                    {
-                        return await executor.ExecuteAsync(fileName, arguments, cancellationToken);
-                    }
-                    finally
-                    {
-                        executeStopwatch.Stop();
-                        executeElapsedMilliseconds = executeStopwatch.ElapsedMilliseconds;
-                    }
-                }
-
-                var finalCommand = ShellCommandFormatter.FormatForOutput(
-                    generatedCommand.RawCommand, generatedCommand.ShellTarget);
-
-                await _standardOutput.WriteLineAsync(finalCommand);
-
-                var clipboardStopwatch = Stopwatch.StartNew();
-                try
-                {
-                    await _clipboardService.SetTextAsync(finalCommand, cancellationToken);
-                }
-                catch (Exception exception)
-                {
-                    await _standardError.WriteLineAsync($"Warning: failed to copy command to clipboard: {exception.Message}");
-                }
-                finally
-                {
-                    clipboardStopwatch.Stop();
-                    clipboardElapsedMilliseconds = clipboardStopwatch.ElapsedMilliseconds;
-                }
-
-                return 0;
             }
             catch (AiConfigurationException exception)
             {

@@ -1,13 +1,15 @@
 # `ai`
 
-`ai` is a .NET global tool that uses OpenRouter to turn natural-language goals into shell commands.
+`ai` is a .NET global tool that uses OpenRouter to turn natural-language goals into shell commands or answer questions about your current workspace.
 
 ## Features
 
 - `ai <goal...>` generates a PowerShell command, prints it, copies it to the clipboard, and in PowerShell prompts for Enter-to-execute in the current session.
+- `ai -q <question...>` / `ai --question <question...>` prints a plain text answer instead of generating a command.
 - `ai --bash <goal...>` generates a bash command body and prints it as `bash -lc "<command>"`.
 - `ai --shell <target> <goal...>` generates a command for the specified shell (`powershell`, `bash`, `zsh`).
 - `ai -x <goal...>` / `ai --execute <goal...>` generates a command, displays it, prompts for Enter-to-confirm, and runs it directly via the target shell. Works cross-platform without the PowerShell wrapper.
+- `ai -f <path> ...` / `ai --file <path> ...` includes up to 3 files as additional context for command generation or `-q` answers.
 - `ai --models` lists available OpenRouter model IDs alphabetically.
 - `ai --model <model-id> <goal...>` overrides the configured default model.
 - `ai --version` prints the built tool version.
@@ -114,6 +116,20 @@ Generate a bash command wrapper:
 ai --bash list all markdown files modified in the last day
 ```
 
+Ask a question without generating a command:
+
+```powershell
+ai -q what does src/Ai.Cli/AiApplication.cs do
+```
+
+Include files in the request context:
+
+```powershell
+ai -q -f README.md -f src/Ai.Cli/AiApplication.cs summarize how the CLI behaves
+```
+
+`-f` accepts up to 3 files and shares a 12,000-character budget across all included file contents.
+
 List OpenRouter models:
 
 ```powershell
@@ -132,4 +148,4 @@ Print timing information while generating a command:
 ai --timing list all files in the current directory
 ```
 
-`--models`, `--version`, and help output pass straight through without the execution prompt.
+`--models`, `--version`, `-q` / `--question`, and help output pass straight through without the PowerShell execution prompt.

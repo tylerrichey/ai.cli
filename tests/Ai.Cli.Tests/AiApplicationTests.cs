@@ -27,6 +27,7 @@ public sealed class AiApplicationTests
         Assert.NotNull(service.LastGenerationRequest);
         Assert.Null(service.LastGenerationRequest!.ShellTarget);
         Assert.Equal("list files", service.LastGenerationRequest.Goal);
+        Assert.Empty(service.LastGenerationRequest.IncludedFiles);
     }
 
     [Fact]
@@ -365,15 +366,142 @@ public sealed class AiApplicationTests
         Assert.Equal(string.Empty, stdout.ToString());
     }
 
+    [Fact]
+    public async Task RunAsync_Question_PrintsAnswerWithoutUsingClipboard()
+    {
+        var service = new StubAiApplicationService
+        {
+            QuestionResult = "Here is the answer."
+        };
+        var clipboard = new RecordingClipboardService();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr);
+
+        var exitCode = await application.RunAsync(["-q", "what", "is", "this"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal("Here is the answer." + Environment.NewLine, stdout.ToString());
+        Assert.Equal(string.Empty, stderr.ToString());
+        Assert.Null(clipboard.LastText);
+        Assert.Equal(0, service.GenerateCallCount);
+        Assert.Equal(1, service.QuestionCallCount);
+        Assert.NotNull(service.LastQuestionRequest);
+        Assert.Equal("what is this", service.LastQuestionRequest!.Question);
+        Assert.Empty(service.LastQuestionRequest.IncludedFiles);
+    }
+
+    [Fact]
+    public async Task RunAsync_QuestionAndExecuteReturnsError()
+    {
+        var service = new StubAiApplicationService();
+        var clipboard = new RecordingClipboardService();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr);
+
+        var exitCode = await application.RunAsync(["-q", "-x", "what", "is", "this"], CancellationToken.None);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("-q", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Contains("-x", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Equal(0, service.GenerateCallCount);
+        Assert.Equal(0, service.QuestionCallCount);
+    }
+
+    [Fact]
+    public async Task RunAsync_QuestionAndShellReturnsError()
+    {
+        var service = new StubAiApplicationService();
+        var clipboard = new RecordingClipboardService();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr);
+
+        var exitCode = await application.RunAsync(["-q", "--shell", "bash", "what", "is", "this"], CancellationToken.None);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("-q", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Contains("--shell", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Equal(0, service.GenerateCallCount);
+        Assert.Equal(0, service.QuestionCallCount);
+    }
+
+    [Fact]
+    public async Task RunAsync_FileOptionsPassPathsToCommandGeneration()
+    {
+        var service = new StubAiApplicationService
+        {
+            GeneratedResult = new GeneratedCommand("Get-ChildItem", ShellTarget.PowerShell)
+        };
+        var clipboard = new RecordingClipboardService();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr);
+
+        var exitCode = await application.RunAsync(["-f", "alpha.txt", "-f", "beta.txt", "list", "files"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(["alpha.txt", "beta.txt"], service.LastGenerationRequest!.IncludedFiles);
+    }
+
+    [Fact]
+    public async Task RunAsync_FileOptionsPassPathsToQuestionRequests()
+    {
+        var service = new StubAiApplicationService
+        {
+            QuestionResult = "Here is the answer."
+        };
+        var clipboard = new RecordingClipboardService();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr);
+
+        var exitCode = await application.RunAsync(["-q", "-f", "alpha.txt", "-f", "beta.txt", "what", "is", "this"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(["alpha.txt", "beta.txt"], service.LastQuestionRequest!.IncludedFiles);
+    }
+
+    [Fact]
+    public async Task RunAsync_ExecuteWithFileOptionsPassesPathsToCommandGeneration()
+    {
+        var service = new StubAiApplicationService
+        {
+            GeneratedResult = new GeneratedCommand("Get-ChildItem", ShellTarget.PowerShell)
+        };
+        var clipboard = new RecordingClipboardService();
+        var executor = new StubCommandExecutor
+        {
+            IsInteractive = true,
+            KeyToReturn = new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false),
+            ExitCodeToReturn = 0
+        };
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, executor);
+
+        var exitCode = await application.RunAsync(["-x", "-f", "alpha.txt", "list", "files"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(["alpha.txt"], service.LastGenerationRequest!.IncludedFiles);
+    }
+
     private sealed class StubAiApplicationService : IAiApplicationService
     {
         public GeneratedCommand GeneratedResult { get; set; } = new("", ShellTarget.PowerShell);
+
+        public string QuestionResult { get; set; } = string.Empty;
 
         public IReadOnlyList<string> Models { get; set; } = Array.Empty<string>();
 
         public GenerateUserCommandRequest? LastGenerationRequest { get; private set; }
 
+        public AskQuestionRequest? LastQuestionRequest { get; private set; }
+
         public int GenerateCallCount { get; private set; }
+
+        public int QuestionCallCount { get; private set; }
 
         public int ModelsCallCount { get; private set; }
 
@@ -382,6 +510,13 @@ public sealed class AiApplicationTests
             GenerateCallCount++;
             LastGenerationRequest = request;
             return Task.FromResult(GeneratedResult);
+        }
+
+        public Task<string> AskQuestionAsync(AskQuestionRequest request, CancellationToken cancellationToken)
+        {
+            QuestionCallCount++;
+            LastQuestionRequest = request;
+            return Task.FromResult(QuestionResult);
         }
 
         public Task<IReadOnlyList<string>> GetModelsAsync(CancellationToken cancellationToken)
