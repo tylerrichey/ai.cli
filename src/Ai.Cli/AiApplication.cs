@@ -12,7 +12,8 @@ public sealed class AiApplication(
     TextWriter standardOutput,
     TextWriter standardError,
     ICommandExecutor? commandExecutor = null,
-    Func<string>? versionProvider = null)
+    Func<string>? versionProvider = null,
+    IMarkdownFormatter? markdownFormatter = null)
 {
     private readonly IAiApplicationService _applicationService = applicationService;
     private readonly IClipboardService _clipboardService = clipboardService;
@@ -20,6 +21,7 @@ public sealed class AiApplication(
     private readonly TextWriter _standardError = standardError;
     private readonly ICommandExecutor? _commandExecutor = commandExecutor;
     private readonly Func<string> _versionProvider = versionProvider ?? BuildVersion.GetDisplayVersion;
+    private readonly IMarkdownFormatter _markdownFormatter = markdownFormatter ?? new PlainMarkdownFormatter();
 
     public Task<int> RunAsync(string[] args, CancellationToken cancellationToken)
     {
@@ -56,6 +58,10 @@ public sealed class AiApplication(
         {
             Description = "Include up to 3 files in the AI request context."
         };
+        var rawOption = new Option<bool>("--raw")
+        {
+            Description = "Disable markdown formatting on question output."
+        };
         var timingOption = new Option<bool>("--timing")
         {
             Description = "Print timing information for the AI call and overall request to stderr."
@@ -75,6 +81,7 @@ public sealed class AiApplication(
             executeOption,
             questionOption,
             fileOption,
+            rawOption,
             timingOption,
             goalArgument
         };
@@ -176,7 +183,9 @@ public sealed class AiApplication(
                                 IncludedFiles: includedFiles),
                             cancellationToken);
 
-                        await _standardOutput.WriteLineAsync(answer);
+                        var useRaw = parseResult.GetValue(rawOption);
+                        var formatted = useRaw ? answer : _markdownFormatter.Format(answer);
+                        await _standardOutput.WriteLineAsync(formatted);
                         return 0;
                     }
 

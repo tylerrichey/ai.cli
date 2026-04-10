@@ -13,6 +13,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Markdig" Version="1.1.2" />
     <PackageReference Include="System.CommandLine" Version="2.0.4" />
     <PackageReference Include="TextCopy" Version="6.2.1" />
   </ItemGroup>
