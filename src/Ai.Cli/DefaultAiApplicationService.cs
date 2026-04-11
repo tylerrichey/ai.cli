@@ -41,10 +41,10 @@ public sealed class DefaultAiApplicationService(
             new GenerateCommandRequest(settings.ApiKey, settings.ModelId, prompt),
             cancellationToken);
 
-        return new GeneratedCommand(rawCommand, shellTarget);
+        return new GeneratedCommand(rawCommand, shellTarget, settings.ModelId);
     }
 
-    public async Task<string> AskQuestionAsync(AskQuestionRequest request, CancellationToken cancellationToken)
+    public async Task<GeneratedAnswer> AskQuestionAsync(AskQuestionRequest request, CancellationToken cancellationToken)
     {
         var operatingSystem = GetOperatingSystemKind();
         var configuration = AiConfigurationLoader.Load(GetConfigPath(operatingSystem));
@@ -61,9 +61,11 @@ public sealed class DefaultAiApplicationService(
             directoryContext,
             fileContexts);
 
-        return await _openRouterClient.GenerateTextAsync(
+        var answer = await _openRouterClient.GenerateTextAsync(
             new GenerateCommandRequest(settings.ApiKey, settings.ModelId, prompt),
             cancellationToken);
+
+        return new GeneratedAnswer(answer, settings.ModelId);
     }
 
     public async Task<IReadOnlyList<string>> GetModelsAsync(CancellationToken cancellationToken)

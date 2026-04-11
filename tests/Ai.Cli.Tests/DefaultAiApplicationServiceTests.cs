@@ -128,7 +128,7 @@ public sealed class DefaultAiApplicationServiceTests : IDisposable
                 IncludedFiles: ["notes.txt"]),
             CancellationToken.None);
 
-        Assert.Equal("answer text", result);
+        Assert.Equal("answer text", result.Answer);
         Assert.NotNull(client.LastTextRequest);
         Assert.Equal("env-key", client.LastTextRequest!.ApiKey);
         Assert.Equal("override-model", client.LastTextRequest.ModelId);
