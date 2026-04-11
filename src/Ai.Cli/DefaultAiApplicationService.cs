@@ -53,8 +53,23 @@ public sealed class DefaultAiApplicationService(
             _environmentVariableReader("OPENROUTER_API_KEY"),
             request.ModelOverride);
         var currentDirectory = _currentDirectoryProvider();
-        var directoryContext = DirectoryContextCollector.Collect(currentDirectory);
         var fileContexts = FileContextCollector.Collect(currentDirectory, request.IncludedFiles);
+
+        if (request.PriorMessages is { Count: > 0 })
+        {
+            var allMessages = new List<ConversationMessage>(request.PriorMessages);
+
+            var lines = new List<string> { request.Question };
+            PromptContextFormatter.AddFileContext(lines, fileContexts);
+            allMessages.Add(new ConversationMessage("user", string.Join(Environment.NewLine, lines)));
+
+            var resumeAnswer = await _openRouterClient.GenerateTextWithMessagesAsync(
+                settings.ApiKey, settings.ModelId, allMessages, cancellationToken);
+
+            return new GeneratedAnswer(resumeAnswer, settings.ModelId);
+        }
+
+        var directoryContext = DirectoryContextCollector.Collect(currentDirectory);
         var prompt = QuestionPromptBuilder.Build(
             request.Question,
             operatingSystem.ToString(),

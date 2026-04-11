@@ -77,6 +77,10 @@ public sealed class AiApplication(
         {
             Description = "Search and display history. Remaining arguments are used as a search term."
         };
+        var resumeOption = new Option<bool>("--resume", ["-r"])
+        {
+            Description = "Continue from the last history entry, sending it as conversation context."
+        };
         var goalArgument = new Argument<string[]>("goal")
         {
             Arity = ArgumentArity.ZeroOrMore,
@@ -96,6 +100,7 @@ public sealed class AiApplication(
             timingOption,
             noHistoryOption,
             historyOption,
+            resumeOption,
             goalArgument
         };
 
@@ -150,6 +155,7 @@ public sealed class AiApplication(
                 var useBash = parseResult.GetValue(bashOption);
                 var shellValue = parseResult.GetValue(shellOption);
                 var useQuestionMode = parseResult.GetValue(questionOption);
+                var useResumeMode = parseResult.GetValue(resumeOption);
                 var includedFiles = parseResult.GetValue(fileOption) ?? [];
                 var noHistory = parseResult.GetValue(noHistoryOption);
 
@@ -177,6 +183,30 @@ public sealed class AiApplication(
                     return 1;
                 }
 
+                if (useResumeMode && useQuestionMode)
+                {
+                    await _standardError.WriteLineAsync("-r and -q cannot be used together.");
+                    return 1;
+                }
+
+                if (useResumeMode && parseResult.GetValue(executeOption))
+                {
+                    await _standardError.WriteLineAsync("-r and -x cannot be used together.");
+                    return 1;
+                }
+
+                if (useResumeMode && useBash)
+                {
+                    await _standardError.WriteLineAsync("-r and --bash cannot be used together.");
+                    return 1;
+                }
+
+                if (useResumeMode && shellValue is not null)
+                {
+                    await _standardError.WriteLineAsync("-r and --shell cannot be used together.");
+                    return 1;
+                }
+
                 ShellTarget? cliShellTarget = null;
                 if (useBash)
                 {
@@ -197,6 +227,75 @@ public sealed class AiApplication(
                 var aiStopwatch = Stopwatch.StartNew();
                 try
                 {
+                    if (useResumeMode)
+                    {
+                        if (_historyService is null)
+                        {
+                            await _standardError.WriteLineAsync("History service is not available.");
+                            return 1;
+                        }
+
+                        var allEntries = await _historyService.SearchAsync(null, cancellationToken);
+                        if (allEntries.Count == 0)
+                        {
+                            await _standardError.WriteLineAsync("No history entries found to resume from.");
+                            return 1;
+                        }
+
+                        var byId = allEntries.ToDictionary(e => e.Id);
+                        var lastEntry = allEntries[0];
+
+                        // Walk the chain oldest-to-newest
+                        var chain = new List<HistoryEntry>();
+                        var current = lastEntry;
+                        while (true)
+                        {
+                            chain.Insert(0, current);
+                            if (!current.ResumedFromId.HasValue || !byId.TryGetValue(current.ResumedFromId.Value, out var prev))
+                            {
+                                break;
+                            }
+                            current = prev;
+                        }
+
+                        var priorMessages = new List<ConversationMessage>();
+                        foreach (var entry in chain)
+                        {
+                            priorMessages.Add(new ConversationMessage("user", entry.Input));
+                            priorMessages.Add(new ConversationMessage("assistant", entry.Response));
+                        }
+
+                        var resumeAnswer = await _applicationService.AskQuestionAsync(
+                            new AskQuestionRequest(
+                                Question: string.Join(" ", goalTokens),
+                                ModelOverride: parseResult.GetValue(modelOption),
+                                IncludedFiles: includedFiles,
+                                PriorMessages: priorMessages),
+                            cancellationToken);
+
+                        var useRaw = parseResult.GetValue(rawOption);
+                        var resumeFormatted = useRaw ? resumeAnswer.Answer : _markdownFormatter.Format(resumeAnswer.Answer);
+                        await _standardOutput.WriteLineAsync(resumeFormatted);
+
+                        if (!noHistory)
+                        {
+                            await TryRecordHistoryAsync(new HistoryEntry(
+                                Id: Guid.NewGuid(),
+                                Timestamp: DateTimeOffset.UtcNow,
+                                Kind: HistoryEntryKind.Resume,
+                                Input: string.Join(" ", goalTokens),
+                                Response: resumeAnswer.Answer,
+                                ShellTarget: null,
+                                ModelId: resumeAnswer.ModelId,
+                                WorkingDirectory: Directory.GetCurrentDirectory(),
+                                IncludedFiles: includedFiles,
+                                WasExecuted: false,
+                                ResumedFromId: lastEntry.Id), cancellationToken);
+                        }
+
+                        return 0;
+                    }
+
                     if (useQuestionMode)
                     {
                         var answer = await _applicationService.AskQuestionAsync(
@@ -422,9 +521,12 @@ public sealed class AiApplication(
         foreach (var entry in displayed)
         {
             var localTime = entry.Timestamp.ToLocalTime();
-            var kindLabel = entry.Kind == HistoryEntryKind.Command
-                ? $"command ({entry.ShellTarget})"
-                : "question";
+            var kindLabel = entry.Kind switch
+            {
+                HistoryEntryKind.Command => $"command ({entry.ShellTarget})",
+                HistoryEntryKind.Resume => "resume",
+                _ => "question"
+            };
 
             await _standardOutput.WriteLineAsync(
                 $"[{localTime:yyyy-MM-dd HH:mm:ss}] {kindLabel}  model: {entry.ModelId}");

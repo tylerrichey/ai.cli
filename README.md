@@ -6,11 +6,12 @@
 
 - `ai <goal...>` generates a PowerShell command, prints it, copies it to the clipboard, and in PowerShell prompts for Enter-to-execute in the current session.
 - `ai -q <question...>` / `ai --question <question...>` prints a plain text answer instead of generating a command.
+- `ai -r <follow-up...>` / `ai --resume <follow-up...>` continues from the last history entry, sending the prior conversation as context for a multi-turn exchange.
 - `ai --bash <goal...>` generates a bash command body and prints it as `bash -lc "<command>"`.
 - `ai --shell <target> <goal...>` generates a command for the specified shell (`powershell`, `bash`, `zsh`).
 - `ai -x <goal...>` / `ai --execute <goal...>` generates a command, displays it, prompts for Enter-to-confirm, and runs it directly via the target shell. Works cross-platform without the PowerShell wrapper.
 - `ai -f <path> ...` / `ai --file <path> ...` includes up to 3 files as additional context for command generation or `-q` answers.
-- `ai -hs` / `ai --history` shows recent history (most recent 50 entries). Append search tokens to filter: `ai -hs <terms...>`.
+- `ai -hs` / `ai --history` shows recent history (most recent 50 entries). Append search tokens to filter: `ai -hs <terms...>`. Resume entries are shown with the `resume` label.
 - `ai -nh` / `ai --no-history` skips recording the current invocation in history.
 - `ai --models` lists available OpenRouter model IDs alphabetically.
 - `ai --model <model-id> <goal...>` overrides the configured default model.
@@ -155,7 +156,17 @@ Print timing information while generating a command:
 ai --timing list all files in the current directory
 ```
 
-`--models`, `--version`, `-q` / `--question`, `-hs` / `--history`, and help output pass straight through without the PowerShell execution prompt.
+`--models`, `--version`, `-q` / `--question`, `-r` / `--resume`, `-hs` / `--history`, and help output pass straight through without the PowerShell execution prompt.
+
+Continue from the last history entry (multi-turn conversation):
+
+```powershell
+ai -q why would i want to use git lfs
+ai -r i am not using github
+ai -r what about for large video assets
+```
+
+Each `-r` invocation chains from the previous entry so the full conversation context is sent. Entries are saved to history with the `resume` kind and a back-link to the entry they continued from.
 
 Search history for commands involving "dotnet":
 

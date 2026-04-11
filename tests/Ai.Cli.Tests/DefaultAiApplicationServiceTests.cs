@@ -200,5 +200,10 @@ public sealed class DefaultAiApplicationServiceTests : IDisposable
             LastApiKeyForModels = apiKey;
             return Task.FromResult<IReadOnlyList<string>>(["alpha/model", "beta/model"]);
         }
+
+        public Task<string> GenerateTextWithMessagesAsync(string apiKey, string modelId, IReadOnlyList<ConversationMessage> messages, CancellationToken cancellationToken)
+        {
+            return Task.FromResult("resume answer text");
+        }
     }
 }

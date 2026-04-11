@@ -10,4 +10,5 @@ public sealed record HistoryEntry(
     string ModelId,
     string WorkingDirectory,
     IReadOnlyList<string> IncludedFiles,
-    bool WasExecuted);
+    bool WasExecuted,
+    Guid? ResumedFromId = null);

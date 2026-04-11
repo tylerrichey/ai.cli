@@ -35,7 +35,11 @@ public sealed class OpenRouterClient(HttpClient httpClient) : IOpenRouterClient
 
     public async Task<string> GenerateCommandAsync(GenerateCommandRequest requestModel, CancellationToken cancellationToken)
     {
-        var content = await GenerateContentAsync(requestModel, cancellationToken);
+        var content = await GenerateContentAsync(
+            requestModel.ApiKey,
+            requestModel.ModelId,
+            [new ConversationMessage("user", requestModel.Prompt)],
+            cancellationToken);
         return string.Join(
             " ",
             content
@@ -44,28 +48,34 @@ public sealed class OpenRouterClient(HttpClient httpClient) : IOpenRouterClient
 
     public async Task<string> GenerateTextAsync(GenerateCommandRequest requestModel, CancellationToken cancellationToken)
     {
-        var content = await GenerateContentAsync(requestModel, cancellationToken);
-        return content
+        var content = await GenerateContentAsync(
+            requestModel.ApiKey,
+            requestModel.ModelId,
+            [new ConversationMessage("user", requestModel.Prompt)],
+            cancellationToken);
+        return NormalizeTextContent(content);
+    }
+
+    public async Task<string> GenerateTextWithMessagesAsync(string apiKey, string modelId, IReadOnlyList<ConversationMessage> messages, CancellationToken cancellationToken)
+    {
+        var content = await GenerateContentAsync(apiKey, modelId, messages, cancellationToken);
+        return NormalizeTextContent(content);
+    }
+
+    private static string NormalizeTextContent(string content) =>
+        content
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace("\r", "\n", StringComparison.Ordinal)
             .Replace("\n", Environment.NewLine, StringComparison.Ordinal)
             .TrimEnd();
-    }
 
-    private async Task<string> GenerateContentAsync(GenerateCommandRequest requestModel, CancellationToken cancellationToken)
+    private async Task<string> GenerateContentAsync(string apiKey, string modelId, IReadOnlyList<ConversationMessage> messages, CancellationToken cancellationToken)
     {
         var payload = JsonSerializer.Serialize(
             new
             {
-                model = requestModel.ModelId,
-                messages = new[]
-                {
-                    new
-                    {
-                        role = "user",
-                        content = requestModel.Prompt
-                    }
-                }
+                model = modelId,
+                messages = messages.Select(m => new { role = m.Role, content = m.Content }).ToArray()
             },
             JsonOptions);
 
@@ -73,7 +83,7 @@ public sealed class OpenRouterClient(HttpClient httpClient) : IOpenRouterClient
         {
             Content = new StringContent(payload, Encoding.UTF8, "application/json")
         };
-        AddHeaders(request, requestModel.ApiKey);
+        AddHeaders(request, apiKey);
 
         using var response = await _httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -97,7 +107,7 @@ public sealed class OpenRouterClient(HttpClient httpClient) : IOpenRouterClient
     private static void AddHeaders(HttpRequestMessage request, string apiKey)
     {
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-        request.Headers.TryAddWithoutValidation("HTTP-Referer", "https://github.com/tyler/ai-pwsh");
+        request.Headers.TryAddWithoutValidation("HTTP-Referer", "https://github.com/tyler/ai.cli");
         request.Headers.TryAddWithoutValidation("X-Title", "ai");
     }
 }

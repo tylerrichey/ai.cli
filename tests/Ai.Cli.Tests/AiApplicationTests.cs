@@ -488,6 +488,181 @@ public sealed class AiApplicationTests
         Assert.Equal(["alpha.txt"], service.LastGenerationRequest!.IncludedFiles);
     }
 
+    // Resume tests
+
+    [Fact]
+    public async Task RunAsync_Resume_LoadsLastEntryAndCallsWithPriorMessages()
+    {
+        var prevId = Guid.NewGuid();
+        var history = new StubHistoryService
+        {
+            SearchResults =
+            [
+                new HistoryEntry(
+                    Id: prevId,
+                    Timestamp: DateTimeOffset.UtcNow,
+                    Kind: HistoryEntryKind.Question,
+                    Input: "what is git lfs",
+                    Response: "Git LFS is a tool for large file storage.",
+                    ShellTarget: null,
+                    ModelId: "test-model",
+                    WorkingDirectory: "/tmp",
+                    IncludedFiles: [],
+                    WasExecuted: false)
+            ]
+        };
+        var service = new StubAiApplicationService { QuestionResult = "Use it for large assets." };
+        var clipboard = new RecordingClipboardService();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+
+        var exitCode = await application.RunAsync(["-r", "i am not using github"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(1, service.QuestionCallCount);
+        var req = service.LastQuestionRequest!;
+        Assert.NotNull(req.PriorMessages);
+        Assert.Equal(2, req.PriorMessages!.Count);
+        Assert.Equal("user", req.PriorMessages[0].Role);
+        Assert.Equal("what is git lfs", req.PriorMessages[0].Content);
+        Assert.Equal("assistant", req.PriorMessages[1].Role);
+        Assert.Equal("Git LFS is a tool for large file storage.", req.PriorMessages[1].Content);
+        Assert.Equal("i am not using github", req.Question);
+    }
+
+    [Fact]
+    public async Task RunAsync_Resume_RecordsWithResumedFromId()
+    {
+        var prevId = Guid.NewGuid();
+        var history = new StubHistoryService
+        {
+            SearchResults =
+            [
+                new HistoryEntry(
+                    Id: prevId,
+                    Timestamp: DateTimeOffset.UtcNow,
+                    Kind: HistoryEntryKind.Question,
+                    Input: "what is git lfs",
+                    Response: "Git LFS is a tool.",
+                    ShellTarget: null,
+                    ModelId: "test-model",
+                    WorkingDirectory: "/tmp",
+                    IncludedFiles: [],
+                    WasExecuted: false)
+            ]
+        };
+        var service = new StubAiApplicationService { QuestionResult = "Use it for large assets." };
+        var clipboard = new RecordingClipboardService();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+
+        await application.RunAsync(["-r", "follow up"], CancellationToken.None);
+
+        Assert.Equal(1, history.RecordCallCount);
+        var recorded = history.RecordedEntries[0];
+        Assert.Equal(HistoryEntryKind.Resume, recorded.Kind);
+        Assert.Equal(prevId, recorded.ResumedFromId);
+        Assert.Equal("follow up", recorded.Input);
+    }
+
+    [Fact]
+    public async Task RunAsync_Resume_ChainedResumes_ReconstructsFullConversation()
+    {
+        var firstId = Guid.NewGuid();
+        var secondId = Guid.NewGuid();
+        var history = new StubHistoryService
+        {
+            SearchResults =
+            [
+                new HistoryEntry(
+                    Id: secondId,
+                    Timestamp: DateTimeOffset.UtcNow,
+                    Kind: HistoryEntryKind.Resume,
+                    Input: "i am not using github",
+                    Response: "Then use a self-hosted server.",
+                    ShellTarget: null,
+                    ModelId: "test-model",
+                    WorkingDirectory: "/tmp",
+                    IncludedFiles: [],
+                    WasExecuted: false,
+                    ResumedFromId: firstId),
+                new HistoryEntry(
+                    Id: firstId,
+                    Timestamp: DateTimeOffset.UtcNow.AddSeconds(-10),
+                    Kind: HistoryEntryKind.Question,
+                    Input: "what is git lfs",
+                    Response: "Git LFS is a tool.",
+                    ShellTarget: null,
+                    ModelId: "test-model",
+                    WorkingDirectory: "/tmp",
+                    IncludedFiles: [],
+                    WasExecuted: false)
+            ]
+        };
+        var service = new StubAiApplicationService { QuestionResult = "Good for videos too." };
+        var clipboard = new RecordingClipboardService();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+
+        await application.RunAsync(["-r", "what about large video files"], CancellationToken.None);
+
+        var req = service.LastQuestionRequest!;
+        Assert.Equal(4, req.PriorMessages!.Count);
+        Assert.Equal("what is git lfs", req.PriorMessages[0].Content);
+        Assert.Equal("Git LFS is a tool.", req.PriorMessages[1].Content);
+        Assert.Equal("i am not using github", req.PriorMessages[2].Content);
+        Assert.Equal("Then use a self-hosted server.", req.PriorMessages[3].Content);
+    }
+
+    [Fact]
+    public async Task RunAsync_Resume_NoHistoryService_ReturnsError()
+    {
+        var service = new StubAiApplicationService();
+        var clipboard = new RecordingClipboardService();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr);
+
+        var exitCode = await application.RunAsync(["-r", "follow up"], CancellationToken.None);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("History service", stderr.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RunAsync_Resume_EmptyHistory_ReturnsError()
+    {
+        var history = new StubHistoryService();
+        var service = new StubAiApplicationService();
+        var clipboard = new RecordingClipboardService();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+
+        var exitCode = await application.RunAsync(["-r", "follow up"], CancellationToken.None);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("No history", stderr.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RunAsync_ResumeAndQuestion_ReturnsError()
+    {
+        var service = new StubAiApplicationService();
+        var clipboard = new RecordingClipboardService();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr);
+
+        var exitCode = await application.RunAsync(["-r", "-q", "follow up"], CancellationToken.None);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("-r", stderr.ToString(), StringComparison.Ordinal);
+    }
+
     // History tests
 
     [Fact]
