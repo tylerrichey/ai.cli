@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.CommandLine;
 using Ai.Cli.Configuration;
 using Ai.Cli.Generation;
+using Ai.Cli.History;
 using Ai.Cli.Output;
 
 namespace Ai.Cli;
@@ -13,7 +14,8 @@ public sealed class AiApplication(
     TextWriter standardError,
     ICommandExecutor? commandExecutor = null,
     Func<string>? versionProvider = null,
-    IMarkdownFormatter? markdownFormatter = null)
+    IMarkdownFormatter? markdownFormatter = null,
+    IHistoryService? historyService = null)
 {
     private readonly IAiApplicationService _applicationService = applicationService;
     private readonly IClipboardService _clipboardService = clipboardService;
@@ -22,6 +24,7 @@ public sealed class AiApplication(
     private readonly ICommandExecutor? _commandExecutor = commandExecutor;
     private readonly Func<string> _versionProvider = versionProvider ?? BuildVersion.GetDisplayVersion;
     private readonly IMarkdownFormatter _markdownFormatter = markdownFormatter ?? new PlainMarkdownFormatter();
+    private readonly IHistoryService? _historyService = historyService;
 
     public Task<int> RunAsync(string[] args, CancellationToken cancellationToken)
     {
@@ -66,6 +69,14 @@ public sealed class AiApplication(
         {
             Description = "Print timing information for the AI call and overall request to stderr."
         };
+        var noHistoryOption = new Option<bool>("--no-history", ["-nh"])
+        {
+            Description = "Do not record this invocation in history."
+        };
+        var historyOption = new Option<bool>("--history", ["-hs"])
+        {
+            Description = "Search and display history. Remaining arguments are used as a search term."
+        };
         var goalArgument = new Argument<string[]>("goal")
         {
             Arity = ArgumentArity.ZeroOrMore,
@@ -83,6 +94,8 @@ public sealed class AiApplication(
             fileOption,
             rawOption,
             timingOption,
+            noHistoryOption,
+            historyOption,
             goalArgument
         };
 
@@ -97,6 +110,14 @@ public sealed class AiApplication(
 
             try
             {
+                // History search: --history / -hs [search term from goal tokens]
+                if (parseResult.GetValue(historyOption))
+                {
+                    var searchTokens = parseResult.GetValue(goalArgument) ?? [];
+                    var searchTerm = searchTokens.Length > 0 ? string.Join(" ", searchTokens) : null;
+                    return await ShowHistoryAsync(searchTerm, cancellationToken);
+                }
+
                 if (parseResult.GetValue(modelsOption))
                 {
                     var modelsStopwatch = Stopwatch.StartNew();
@@ -130,6 +151,8 @@ public sealed class AiApplication(
                 var shellValue = parseResult.GetValue(shellOption);
                 var useQuestionMode = parseResult.GetValue(questionOption);
                 var includedFiles = parseResult.GetValue(fileOption) ?? [];
+                var noHistory = parseResult.GetValue(noHistoryOption);
+
                 if (useBash && shellValue is not null)
                 {
                     await _standardError.WriteLineAsync("--bash and --shell cannot be used together.");
@@ -184,8 +207,24 @@ public sealed class AiApplication(
                             cancellationToken);
 
                         var useRaw = parseResult.GetValue(rawOption);
-                        var formatted = useRaw ? answer : _markdownFormatter.Format(answer);
+                        var formatted = useRaw ? answer.Answer : _markdownFormatter.Format(answer.Answer);
                         await _standardOutput.WriteLineAsync(formatted);
+
+                        if (!noHistory)
+                        {
+                            await TryRecordHistoryAsync(new HistoryEntry(
+                                Id: Guid.NewGuid(),
+                                Timestamp: DateTimeOffset.UtcNow,
+                                Kind: HistoryEntryKind.Question,
+                                Input: string.Join(" ", goalTokens),
+                                Response: answer.Answer,
+                                ShellTarget: null,
+                                ModelId: answer.ModelId,
+                                WorkingDirectory: Directory.GetCurrentDirectory(),
+                                IncludedFiles: includedFiles,
+                                WasExecuted: false), cancellationToken);
+                        }
+
                         return 0;
                     }
 
@@ -216,7 +255,38 @@ public sealed class AiApplication(
                         if (keyInfo.Key != ConsoleKey.Enter)
                         {
                             await _standardError.WriteLineAsync("Cancelled.");
+
+                            if (!noHistory)
+                            {
+                                await TryRecordHistoryAsync(new HistoryEntry(
+                                    Id: Guid.NewGuid(),
+                                    Timestamp: DateTimeOffset.UtcNow,
+                                    Kind: HistoryEntryKind.Command,
+                                    Input: string.Join(" ", goalTokens),
+                                    Response: generatedCommand.RawCommand,
+                                    ShellTarget: generatedCommand.ShellTarget.ToString().ToLowerInvariant(),
+                                    ModelId: generatedCommand.ModelId,
+                                    WorkingDirectory: Directory.GetCurrentDirectory(),
+                                    IncludedFiles: includedFiles,
+                                    WasExecuted: false), cancellationToken);
+                            }
+
                             return 0;
+                        }
+
+                        if (!noHistory)
+                        {
+                            await TryRecordHistoryAsync(new HistoryEntry(
+                                Id: Guid.NewGuid(),
+                                Timestamp: DateTimeOffset.UtcNow,
+                                Kind: HistoryEntryKind.Command,
+                                Input: string.Join(" ", goalTokens),
+                                Response: generatedCommand.RawCommand,
+                                ShellTarget: generatedCommand.ShellTarget.ToString().ToLowerInvariant(),
+                                ModelId: generatedCommand.ModelId,
+                                WorkingDirectory: Directory.GetCurrentDirectory(),
+                                IncludedFiles: includedFiles,
+                                WasExecuted: true), cancellationToken);
                         }
 
                         var (fileName, arguments) = ShellCommandFormatter.GetExecutionCommand(
@@ -252,6 +322,21 @@ public sealed class AiApplication(
                     {
                         clipboardStopwatch.Stop();
                         clipboardElapsedMilliseconds = clipboardStopwatch.ElapsedMilliseconds;
+                    }
+
+                    if (!noHistory)
+                    {
+                        await TryRecordHistoryAsync(new HistoryEntry(
+                            Id: Guid.NewGuid(),
+                            Timestamp: DateTimeOffset.UtcNow,
+                            Kind: HistoryEntryKind.Command,
+                            Input: string.Join(" ", goalTokens),
+                            Response: generatedCommand.RawCommand,
+                            ShellTarget: generatedCommand.ShellTarget.ToString().ToLowerInvariant(),
+                            ModelId: generatedCommand.ModelId,
+                            WorkingDirectory: Directory.GetCurrentDirectory(),
+                            IncludedFiles: includedFiles,
+                            WasExecuted: false), cancellationToken);
                     }
 
                     return 0;
@@ -310,5 +395,66 @@ public sealed class AiApplication(
     {
         await _standardOutput.WriteLineAsync(_versionProvider());
         return 0;
+    }
+
+    async Task<int> ShowHistoryAsync(string? searchTerm, CancellationToken cancellationToken)
+    {
+        if (_historyService is null)
+        {
+            await _standardError.WriteLineAsync("History service is not available.");
+            return 1;
+        }
+
+        var entries = await _historyService.SearchAsync(
+            string.IsNullOrWhiteSpace(searchTerm) ? null : searchTerm,
+            cancellationToken);
+
+        if (entries.Count == 0)
+        {
+            await _standardError.WriteLineAsync("No history entries found.");
+            return 0;
+        }
+
+        const int maxDisplay = 50;
+        const int maxResponseLength = 200;
+
+        var displayed = entries.Take(maxDisplay);
+        foreach (var entry in displayed)
+        {
+            var localTime = entry.Timestamp.ToLocalTime();
+            var kindLabel = entry.Kind == HistoryEntryKind.Command
+                ? $"command ({entry.ShellTarget})"
+                : "question";
+
+            await _standardOutput.WriteLineAsync(
+                $"[{localTime:yyyy-MM-dd HH:mm:ss}] {kindLabel}  model: {entry.ModelId}");
+            await _standardOutput.WriteLineAsync($"  {entry.Input}");
+
+            var response = entry.Response.Length > maxResponseLength
+                ? string.Concat(entry.Response.AsSpan(0, maxResponseLength), "...")
+                : entry.Response;
+            var responseLine = response.ReplaceLineEndings(" ");
+            await _standardOutput.WriteLineAsync($"  -> {responseLine}");
+            await _standardOutput.WriteLineAsync();
+        }
+
+        return 0;
+    }
+
+    async Task TryRecordHistoryAsync(HistoryEntry entry, CancellationToken cancellationToken)
+    {
+        if (_historyService is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _historyService.RecordAsync(entry, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            await _standardError.WriteLineAsync($"Warning: failed to record history: {exception.Message}");
+        }
     }
 }

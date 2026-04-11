@@ -10,6 +10,8 @@
 - `ai --shell <target> <goal...>` generates a command for the specified shell (`powershell`, `bash`, `zsh`).
 - `ai -x <goal...>` / `ai --execute <goal...>` generates a command, displays it, prompts for Enter-to-confirm, and runs it directly via the target shell. Works cross-platform without the PowerShell wrapper.
 - `ai -f <path> ...` / `ai --file <path> ...` includes up to 3 files as additional context for command generation or `-q` answers.
+- `ai -hs` / `ai --history` shows recent history (most recent 50 entries). Append search tokens to filter: `ai -hs <terms...>`.
+- `ai -nh` / `ai --no-history` skips recording the current invocation in history.
 - `ai --models` lists available OpenRouter model IDs alphabetically.
 - `ai --model <model-id> <goal...>` overrides the configured default model.
 - `ai --version` prints the built tool version.
@@ -22,6 +24,11 @@ The tool reads JSON config from:
 
 - Windows: `%USERPROFILE%\.config\ai\config.json`
 - Unix: `$XDG_CONFIG_HOME/ai/config.json` or `~/.config/ai/config.json`
+
+History is stored as JSONL (one entry per line) in the same directory:
+
+- Windows: `%USERPROFILE%\.config\ai\history.jsonl`
+- Unix: `$XDG_CONFIG_HOME/ai/history.jsonl` or `~/.config/ai/history.jsonl`
 
 Supported keys:
 
@@ -148,4 +155,16 @@ Print timing information while generating a command:
 ai --timing list all files in the current directory
 ```
 
-`--models`, `--version`, `-q` / `--question`, and help output pass straight through without the PowerShell execution prompt.
+`--models`, `--version`, `-q` / `--question`, `-hs` / `--history`, and help output pass straight through without the PowerShell execution prompt.
+
+Search history for commands involving "dotnet":
+
+```powershell
+ai -hs dotnet
+```
+
+Run a command without recording it to history:
+
+```powershell
+ai -nh list all files in the current directory
+```

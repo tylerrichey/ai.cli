@@ -11,16 +11,48 @@ public static class ConfigFileLocator
         return operatingSystem switch
         {
             OperatingSystemKind.Windows => Path.Combine(
+                GetConfigDirectory(operatingSystem, userProfile, xdgConfigHome, homeDirectory),
+                "config.json"),
+            _ => JoinPosix(
+                GetConfigDirectory(operatingSystem, userProfile, xdgConfigHome, homeDirectory),
+                "config.json")
+        };
+    }
+
+    public static string GetHistoryPath(
+        OperatingSystemKind operatingSystem,
+        string? userProfile,
+        string? xdgConfigHome,
+        string? homeDirectory)
+    {
+        return operatingSystem switch
+        {
+            OperatingSystemKind.Windows => Path.Combine(
+                GetConfigDirectory(operatingSystem, userProfile, xdgConfigHome, homeDirectory),
+                "history.jsonl"),
+            _ => JoinPosix(
+                GetConfigDirectory(operatingSystem, userProfile, xdgConfigHome, homeDirectory),
+                "history.jsonl")
+        };
+    }
+
+    private static string GetConfigDirectory(
+        OperatingSystemKind operatingSystem,
+        string? userProfile,
+        string? xdgConfigHome,
+        string? homeDirectory)
+    {
+        return operatingSystem switch
+        {
+            OperatingSystemKind.Windows => Path.Combine(
                 userProfile ?? throw new InvalidOperationException("Windows config lookup requires a user profile path."),
                 ".config",
-                "ai",
-                "config.json"),
+                "ai"),
             _ => JoinPosix(
                 xdgConfigHome ?? JoinPosix(
                     homeDirectory ?? throw new InvalidOperationException("Unix config lookup requires a home directory."),
                     ".config"),
-                "ai",
-                "config.json")
+                "ai")
         };
     }
 
