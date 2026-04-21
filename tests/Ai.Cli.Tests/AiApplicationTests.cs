@@ -663,6 +663,203 @@ public sealed class AiApplicationTests
         Assert.Contains("-r", stderr.ToString(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task RunAsync_Resume_AfterCommand_GeneratesCommand()
+    {
+        var prevId = Guid.NewGuid();
+        var history = new StubHistoryService
+        {
+            SearchResults =
+            [
+                new HistoryEntry(
+                    Id: prevId,
+                    Timestamp: DateTimeOffset.UtcNow,
+                    Kind: HistoryEntryKind.Command,
+                    Input: "list files",
+                    Response: "Get-ChildItem",
+                    ShellTarget: "powershell",
+                    ModelId: "test-model",
+                    WorkingDirectory: "/tmp",
+                    IncludedFiles: [],
+                    WasExecuted: false)
+            ]
+        };
+        var service = new StubAiApplicationService
+        {
+            GeneratedResult = new GeneratedCommand("Get-ChildItem -Hidden", ShellTarget.PowerShell, "test-model")
+        };
+        var clipboard = new RecordingClipboardService();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+
+        var exitCode = await application.RunAsync(["-r", "show hidden too"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(1, service.GenerateCallCount);
+        Assert.Equal(0, service.QuestionCallCount);
+        var req = service.LastGenerationRequest!;
+        Assert.NotNull(req.PriorMessages);
+        Assert.Equal(2, req.PriorMessages!.Count);
+        Assert.Equal("user", req.PriorMessages[0].Role);
+        Assert.Equal("list files", req.PriorMessages[0].Content);
+        Assert.Equal("assistant", req.PriorMessages[1].Role);
+        Assert.Equal("Get-ChildItem", req.PriorMessages[1].Content);
+        Assert.Equal("show hidden too", req.Goal);
+    }
+
+    [Fact]
+    public async Task RunAsync_Resume_AfterCommand_RecordsEffectiveKindCommand()
+    {
+        var prevId = Guid.NewGuid();
+        var history = new StubHistoryService
+        {
+            SearchResults =
+            [
+                new HistoryEntry(
+                    Id: prevId,
+                    Timestamp: DateTimeOffset.UtcNow,
+                    Kind: HistoryEntryKind.Command,
+                    Input: "list files",
+                    Response: "Get-ChildItem",
+                    ShellTarget: "powershell",
+                    ModelId: "test-model",
+                    WorkingDirectory: "/tmp",
+                    IncludedFiles: [],
+                    WasExecuted: false)
+            ]
+        };
+        var service = new StubAiApplicationService
+        {
+            GeneratedResult = new GeneratedCommand("Get-ChildItem -Hidden", ShellTarget.PowerShell, "test-model")
+        };
+        var clipboard = new RecordingClipboardService();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+
+        await application.RunAsync(["-r", "show hidden too"], CancellationToken.None);
+
+        Assert.Equal(1, history.RecordCallCount);
+        var recorded = history.RecordedEntries[0];
+        Assert.Equal(HistoryEntryKind.Resume, recorded.Kind);
+        Assert.Equal(HistoryEntryKind.Command, recorded.EffectiveKind);
+        Assert.Equal("powershell", recorded.ShellTarget);
+        Assert.Equal("Get-ChildItem -Hidden", recorded.Response);
+    }
+
+    [Fact]
+    public async Task RunAsync_Resume_ChainedResumes_PreservesEffectiveKind()
+    {
+        var firstId = Guid.NewGuid();
+        var secondId = Guid.NewGuid();
+        var history = new StubHistoryService
+        {
+            SearchResults =
+            [
+                new HistoryEntry(
+                    Id: secondId,
+                    Timestamp: DateTimeOffset.UtcNow,
+                    Kind: HistoryEntryKind.Resume,
+                    Input: "show hidden too",
+                    Response: "Get-ChildItem -Hidden",
+                    ShellTarget: "powershell",
+                    ModelId: "test-model",
+                    WorkingDirectory: "/tmp",
+                    IncludedFiles: [],
+                    WasExecuted: false,
+                    ResumedFromId: firstId,
+                    EffectiveKind: HistoryEntryKind.Command),
+                new HistoryEntry(
+                    Id: firstId,
+                    Timestamp: DateTimeOffset.UtcNow.AddSeconds(-10),
+                    Kind: HistoryEntryKind.Command,
+                    Input: "list files",
+                    Response: "Get-ChildItem",
+                    ShellTarget: "powershell",
+                    ModelId: "test-model",
+                    WorkingDirectory: "/tmp",
+                    IncludedFiles: [],
+                    WasExecuted: false)
+            ]
+        };
+        var service = new StubAiApplicationService
+        {
+            GeneratedResult = new GeneratedCommand("Get-ChildItem -Force", ShellTarget.PowerShell, "test-model")
+        };
+        var clipboard = new RecordingClipboardService();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+
+        var exitCode = await application.RunAsync(["-r", "including system files"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(1, service.GenerateCallCount);
+        var req = service.LastGenerationRequest!;
+        Assert.Equal(4, req.PriorMessages!.Count);
+        Assert.Equal("list files", req.PriorMessages[0].Content);
+        Assert.Equal("Get-ChildItem", req.PriorMessages[1].Content);
+        Assert.Equal("show hidden too", req.PriorMessages[2].Content);
+        Assert.Equal("Get-ChildItem -Hidden", req.PriorMessages[3].Content);
+
+        var recorded = history.RecordedEntries[0];
+        Assert.Equal(HistoryEntryKind.Resume, recorded.Kind);
+        Assert.Equal(HistoryEntryKind.Command, recorded.EffectiveKind);
+    }
+
+    [Fact]
+    public async Task RunAsync_Resume_OldResumeWithoutEffectiveKind_FallsBackToQuestion()
+    {
+        var firstId = Guid.NewGuid();
+        var secondId = Guid.NewGuid();
+        var history = new StubHistoryService
+        {
+            SearchResults =
+            [
+                new HistoryEntry(
+                    Id: secondId,
+                    Timestamp: DateTimeOffset.UtcNow,
+                    Kind: HistoryEntryKind.Resume,
+                    Input: "i am not using github",
+                    Response: "Then use a self-hosted server.",
+                    ShellTarget: null,
+                    ModelId: "test-model",
+                    WorkingDirectory: "/tmp",
+                    IncludedFiles: [],
+                    WasExecuted: false,
+                    ResumedFromId: firstId,
+                    EffectiveKind: null),
+                new HistoryEntry(
+                    Id: firstId,
+                    Timestamp: DateTimeOffset.UtcNow.AddSeconds(-10),
+                    Kind: HistoryEntryKind.Question,
+                    Input: "what is git lfs",
+                    Response: "Git LFS is a tool.",
+                    ShellTarget: null,
+                    ModelId: "test-model",
+                    WorkingDirectory: "/tmp",
+                    IncludedFiles: [],
+                    WasExecuted: false)
+            ]
+        };
+        var service = new StubAiApplicationService { QuestionResult = "Good for videos too." };
+        var clipboard = new RecordingClipboardService();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+
+        var exitCode = await application.RunAsync(["-r", "what about large video files"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(1, service.QuestionCallCount);
+        Assert.Equal(0, service.GenerateCallCount);
+
+        var recorded = history.RecordedEntries[0];
+        Assert.Equal(HistoryEntryKind.Resume, recorded.Kind);
+        Assert.Equal(HistoryEntryKind.Question, recorded.EffectiveKind);
+    }
+
     // History tests
 
     [Fact]

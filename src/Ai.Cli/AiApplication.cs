@@ -258,11 +258,64 @@ public sealed class AiApplication(
                             current = prev;
                         }
 
+                        var effectiveKind = DetermineEffectiveKind(chain);
+
                         var priorMessages = new List<ConversationMessage>();
                         foreach (var entry in chain)
                         {
                             priorMessages.Add(new ConversationMessage("user", entry.Input));
                             priorMessages.Add(new ConversationMessage("assistant", entry.Response));
+                        }
+
+                        if (effectiveKind == HistoryEntryKind.Command)
+                        {
+                            var resumeGeneratedCommand = await _applicationService.GenerateCommandAsync(
+                                new GenerateUserCommandRequest(
+                                    Goal: string.Join(" ", goalTokens),
+                                    ShellTarget: cliShellTarget,
+                                    ModelOverride: parseResult.GetValue(modelOption),
+                                    IncludedFiles: includedFiles,
+                                    PriorMessages: priorMessages),
+                                cancellationToken);
+
+                            var resumeFinalCommand = ShellCommandFormatter.FormatForOutput(
+                                resumeGeneratedCommand.RawCommand, resumeGeneratedCommand.ShellTarget);
+
+                            await _standardOutput.WriteLineAsync(resumeFinalCommand);
+
+                            var resumeClipboardStopwatch = Stopwatch.StartNew();
+                            try
+                            {
+                                await _clipboardService.SetTextAsync(resumeFinalCommand, cancellationToken);
+                            }
+                            catch (Exception exception)
+                            {
+                                await _standardError.WriteLineAsync($"Warning: failed to copy command to clipboard: {exception.Message}");
+                            }
+                            finally
+                            {
+                                resumeClipboardStopwatch.Stop();
+                                clipboardElapsedMilliseconds = resumeClipboardStopwatch.ElapsedMilliseconds;
+                            }
+
+                            if (!noHistory)
+                            {
+                                await TryRecordHistoryAsync(new HistoryEntry(
+                                    Id: Guid.NewGuid(),
+                                    Timestamp: DateTimeOffset.UtcNow,
+                                    Kind: HistoryEntryKind.Resume,
+                                    Input: string.Join(" ", goalTokens),
+                                    Response: resumeGeneratedCommand.RawCommand,
+                                    ShellTarget: resumeGeneratedCommand.ShellTarget.ToString().ToLowerInvariant(),
+                                    ModelId: resumeGeneratedCommand.ModelId,
+                                    WorkingDirectory: Directory.GetCurrentDirectory(),
+                                    IncludedFiles: includedFiles,
+                                    WasExecuted: false,
+                                    ResumedFromId: lastEntry.Id,
+                                    EffectiveKind: HistoryEntryKind.Command), cancellationToken);
+                            }
+
+                            return 0;
                         }
 
                         var resumeAnswer = await _applicationService.AskQuestionAsync(
@@ -290,7 +343,8 @@ public sealed class AiApplication(
                                 WorkingDirectory: Directory.GetCurrentDirectory(),
                                 IncludedFiles: includedFiles,
                                 WasExecuted: false,
-                                ResumedFromId: lastEntry.Id), cancellationToken);
+                                ResumedFromId: lastEntry.Id,
+                                EffectiveKind: HistoryEntryKind.Question), cancellationToken);
                         }
 
                         return 0;
@@ -541,6 +595,22 @@ public sealed class AiApplication(
         }
 
         return 0;
+    }
+
+    private static HistoryEntryKind DetermineEffectiveKind(List<HistoryEntry> chain)
+    {
+        for (var i = chain.Count - 1; i >= 0; i--)
+        {
+            var entry = chain[i];
+            if (entry.Kind == HistoryEntryKind.Command)
+                return HistoryEntryKind.Command;
+            if (entry.Kind == HistoryEntryKind.Question)
+                return HistoryEntryKind.Question;
+            if (entry.Kind == HistoryEntryKind.Resume && entry.EffectiveKind.HasValue)
+                return entry.EffectiveKind.Value;
+        }
+
+        return HistoryEntryKind.Question;
     }
 
     async Task TryRecordHistoryAsync(HistoryEntry entry, CancellationToken cancellationToken)

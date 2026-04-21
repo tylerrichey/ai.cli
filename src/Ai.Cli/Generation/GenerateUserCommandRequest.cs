@@ -4,4 +4,5 @@ public sealed record GenerateUserCommandRequest(
     string Goal,
     ShellTarget? ShellTarget,
     string? ModelOverride,
-    IReadOnlyList<string> IncludedFiles);
+    IReadOnlyList<string> IncludedFiles,
+    IReadOnlyList<ConversationMessage>? PriorMessages = null);

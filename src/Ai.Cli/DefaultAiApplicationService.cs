@@ -37,9 +37,26 @@ public sealed class DefaultAiApplicationService(
             directoryContext,
             fileContexts);
 
-        var rawCommand = await _openRouterClient.GenerateCommandAsync(
-            new GenerateCommandRequest(settings.ApiKey, settings.ModelId, prompt),
-            cancellationToken);
+        string rawCommand;
+        if (request.PriorMessages is { Count: > 0 })
+        {
+            var allMessages = new List<ConversationMessage>(request.PriorMessages);
+            allMessages.Add(new ConversationMessage("user", prompt));
+
+            var response = await _openRouterClient.GenerateTextWithMessagesAsync(
+                settings.ApiKey, settings.ModelId, allMessages, cancellationToken);
+
+            rawCommand = string.Join(
+                " ",
+                response
+                    .Split(["\r\n", "\n", "\r"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
+        else
+        {
+            rawCommand = await _openRouterClient.GenerateCommandAsync(
+                new GenerateCommandRequest(settings.ApiKey, settings.ModelId, prompt),
+                cancellationToken);
+        }
 
         return new GeneratedCommand(rawCommand, shellTarget, settings.ModelId);
     }

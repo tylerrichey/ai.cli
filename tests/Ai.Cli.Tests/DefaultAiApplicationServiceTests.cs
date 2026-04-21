@@ -95,6 +95,59 @@ public sealed class DefaultAiApplicationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GenerateCommandAsync_WithPriorMessages_CallsGenerateTextWithMessagesAsync()
+    {
+        var userProfile = Path.Combine(_rootPath, "profile-resume-cmd");
+        var configDirectory = Path.Combine(userProfile, ".config", "ai");
+        var currentDirectory = Path.Combine(_rootPath, "cwd-resume-cmd");
+        Directory.CreateDirectory(configDirectory);
+        Directory.CreateDirectory(currentDirectory);
+        File.WriteAllText(Path.Combine(configDirectory, "config.json"), """
+            {
+              "apiKey": "config-key",
+              "defaultModel": "config-model"
+            }
+            """);
+
+        var client = new FakeOpenRouterClient();
+        var service = new DefaultAiApplicationService(
+            client,
+            currentDirectoryProvider: () => currentDirectory,
+            environmentVariableReader: name => name switch
+            {
+                "OPENROUTER_API_KEY" => "env-key",
+                "USERPROFILE" => userProfile,
+                _ => null
+            });
+
+        var priorMessages = new List<ConversationMessage>
+        {
+            new("user", "first command"),
+            new("assistant", "Get-ChildItem")
+        };
+
+        var result = await service.GenerateCommandAsync(
+            new GenerateUserCommandRequest(
+                Goal: "list hidden files",
+                ShellTarget: ShellTarget.PowerShell,
+                ModelOverride: null,
+                IncludedFiles: [],
+                PriorMessages: priorMessages),
+            CancellationToken.None);
+
+        Assert.Equal("resume answer text", result.RawCommand);
+        Assert.NotNull(client.LastTextWithMessagesRequest);
+        var (_, _, messages) = client.LastTextWithMessagesRequest!.Value;
+        Assert.Equal(3, messages.Count);
+        Assert.Equal("user", messages[0].Role);
+        Assert.Equal("first command", messages[0].Content);
+        Assert.Equal("assistant", messages[1].Role);
+        Assert.Equal("Get-ChildItem", messages[1].Content);
+        Assert.Equal("user", messages[2].Role);
+        Assert.Contains("Goal: list hidden files", messages[2].Content);
+    }
+
+    [Fact]
     public async Task AskQuestionAsync_UsesTextGenerationAndIncludesFileContext()
     {
         var userProfile = Path.Combine(_rootPath, "profile-question");
@@ -183,6 +236,8 @@ public sealed class DefaultAiApplicationServiceTests : IDisposable
 
         public string? LastApiKeyForModels { get; private set; }
 
+        public (string ApiKey, string ModelId, IReadOnlyList<ConversationMessage> Messages)? LastTextWithMessagesRequest { get; private set; }
+
         public Task<string> GenerateCommandAsync(GenerateCommandRequest requestModel, CancellationToken cancellationToken)
         {
             LastGenerateRequest = requestModel;
@@ -203,6 +258,7 @@ public sealed class DefaultAiApplicationServiceTests : IDisposable
 
         public Task<string> GenerateTextWithMessagesAsync(string apiKey, string modelId, IReadOnlyList<ConversationMessage> messages, CancellationToken cancellationToken)
         {
+            LastTextWithMessagesRequest = (apiKey, modelId, messages.ToList());
             return Task.FromResult("resume answer text");
         }
     }
