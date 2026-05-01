@@ -15,7 +15,8 @@ public sealed class AiApplication(
     ICommandExecutor? commandExecutor = null,
     Func<string>? versionProvider = null,
     IMarkdownFormatter? markdownFormatter = null,
-    IHistoryService? historyService = null)
+    IHistoryService? historyService = null,
+    Func<AiConfiguration>? configurationProvider = null)
 {
     private readonly IAiApplicationService _applicationService = applicationService;
     private readonly IClipboardService _clipboardService = clipboardService;
@@ -25,6 +26,27 @@ public sealed class AiApplication(
     private readonly Func<string> _versionProvider = versionProvider ?? BuildVersion.GetDisplayVersion;
     private readonly IMarkdownFormatter _markdownFormatter = markdownFormatter ?? new PlainMarkdownFormatter();
     private readonly IHistoryService? _historyService = historyService;
+    private readonly Func<AiConfiguration> _configurationProvider = configurationProvider ?? LoadConfigurationFromDefaultPath;
+
+    private static AiConfiguration LoadConfigurationFromDefaultPath()
+    {
+        OperatingSystemKind operatingSystem;
+        if (OperatingSystem.IsWindows())
+        {
+            operatingSystem = OperatingSystemKind.Windows;
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            operatingSystem = OperatingSystemKind.MacOS;
+        }
+        else
+        {
+            operatingSystem = OperatingSystemKind.Linux;
+        }
+
+        var path = ConfigurationPathHelper.GetConfigPath(operatingSystem);
+        return AiConfigurationLoader.Load(path);
+    }
 
     public Task<int> RunAsync(string[] args, CancellationToken cancellationToken)
     {
@@ -56,6 +78,11 @@ public sealed class AiApplication(
         var questionOption = new Option<bool>("--question", ["-q"])
         {
             Description = "Ask a question and print the answer instead of generating a command."
+        };
+        var clipboardOnlyOption = new Option<bool>("--clipboard-only")
+        {
+            Description =
+                "Generate a command, print it to stdout, and copy to the clipboard; do not use the implicit execute default from config. Used by the PowerShell wrapper."
         };
         var fileOption = new Option<string[]>("--file", ["-f"])
         {
@@ -95,6 +122,7 @@ public sealed class AiApplication(
             modelOption,
             executeOption,
             questionOption,
+            clipboardOnlyOption,
             fileOption,
             rawOption,
             timingOption,
@@ -154,7 +182,9 @@ public sealed class AiApplication(
 
                 var useBash = parseResult.GetValue(bashOption);
                 var shellValue = parseResult.GetValue(shellOption);
-                var useQuestionMode = parseResult.GetValue(questionOption);
+                var cliQuestion = parseResult.GetValue(questionOption);
+                var cliExecute = parseResult.GetValue(executeOption);
+                var clipboardOnly = parseResult.GetValue(clipboardOnlyOption);
                 var useResumeMode = parseResult.GetValue(resumeOption);
                 var includedFiles = parseResult.GetValue(fileOption) ?? [];
                 var noHistory = parseResult.GetValue(noHistoryOption);
@@ -165,11 +195,20 @@ public sealed class AiApplication(
                     return 1;
                 }
 
-                if (useQuestionMode && parseResult.GetValue(executeOption))
+                if (cliQuestion && cliExecute)
                 {
                     await _standardError.WriteLineAsync("-q and -x cannot be used together.");
                     return 1;
                 }
+
+                var configuration = _configurationProvider();
+                var defaultInvocationMode = ConfigurationResolver.ResolveDefaultInvocationMode(configuration);
+
+                var useQuestionMode = cliQuestion
+                    || (!cliExecute && defaultInvocationMode == DefaultInvocationMode.Question);
+
+                var useExecuteAfterGenerate = cliExecute
+                    || (!cliQuestion && defaultInvocationMode == DefaultInvocationMode.Execute && !clipboardOnly);
 
                 if (useQuestionMode && useBash)
                 {
@@ -189,7 +228,7 @@ public sealed class AiApplication(
                     return 1;
                 }
 
-                if (useResumeMode && parseResult.GetValue(executeOption))
+                if (useResumeMode && useExecuteAfterGenerate)
                 {
                     await _standardError.WriteLineAsync("-r and -x cannot be used together.");
                     return 1;
@@ -389,7 +428,7 @@ public sealed class AiApplication(
                             IncludedFiles: includedFiles),
                         cancellationToken);
 
-                    if (parseResult.GetValue(executeOption))
+                    if (useExecuteAfterGenerate)
                     {
                         await _standardError.WriteLineAsync(generatedCommand.RawCommand);
 

@@ -116,11 +116,7 @@ public sealed class DefaultAiApplicationService(
 
     private string GetConfigPath(OperatingSystemKind operatingSystem)
     {
-        return ConfigFileLocator.GetConfigPath(
-            operatingSystem,
-            userProfile: _environmentVariableReader("USERPROFILE"),
-            xdgConfigHome: _environmentVariableReader("XDG_CONFIG_HOME"),
-            homeDirectory: _environmentVariableReader("HOME"));
+        return ConfigurationPathHelper.GetConfigPath(operatingSystem, _environmentVariableReader);
     }
 
     private static OperatingSystemKind GetOperatingSystemKind()

@@ -182,7 +182,7 @@ function global:ai {
         return
     }
 
-    `$generatedOutput = & `$generatorPath @CommandArgs
+    `$generatedOutput = & `$generatorPath '--clipboard-only' @CommandArgs
     `$exitCode = Get-AiWrapperLastExitCode
     if (`$exitCode -ne 0) {
         `$global:LASTEXITCODE = `$exitCode

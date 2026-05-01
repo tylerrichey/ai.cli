@@ -55,4 +55,30 @@ public static class ConfigurationResolver
 
         return new ResolvedGenerationSettings(apiKey, modelId);
     }
+
+    public static DefaultInvocationMode ResolveDefaultInvocationMode(AiConfiguration configuration)
+    {
+        if (string.IsNullOrWhiteSpace(configuration.DefaultMode))
+        {
+            return DefaultInvocationMode.Execute;
+        }
+
+        if (string.Equals(configuration.DefaultMode, "question", StringComparison.OrdinalIgnoreCase))
+        {
+            return DefaultInvocationMode.Question;
+        }
+
+        if (string.Equals(configuration.DefaultMode, "execute", StringComparison.OrdinalIgnoreCase))
+        {
+            return DefaultInvocationMode.Execute;
+        }
+
+        if (string.Equals(configuration.DefaultMode, "clipboard", StringComparison.OrdinalIgnoreCase))
+        {
+            return DefaultInvocationMode.Clipboard;
+        }
+
+        throw new AiConfigurationException(
+            $"Invalid defaultMode value '{configuration.DefaultMode}'. Valid options: question, execute, clipboard.");
+    }
 }

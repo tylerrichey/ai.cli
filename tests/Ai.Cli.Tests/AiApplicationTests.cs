@@ -1,4 +1,5 @@
 using Ai.Cli;
+using Ai.Cli.Configuration;
 using Ai.Cli.Generation;
 using Ai.Cli.History;
 using Ai.Cli.Output;
@@ -7,6 +8,9 @@ namespace Ai.Cli.Tests;
 
 public sealed class AiApplicationTests
 {
+    private static readonly Func<AiConfiguration> ClipboardDefaultModeConfig =
+        () => new AiConfiguration(null, null, null, "clipboard");
+
     [Fact]
     public async Task RunAsync_PrintsAndCopiesPowerShellCommand()
     {
@@ -17,7 +21,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr);
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["list", "files"], CancellationToken.None);
 
@@ -41,7 +45,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr);
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["--bash", "list", "files"], CancellationToken.None);
 
@@ -61,7 +65,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr);
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["--shell", "zsh", "list", "files"], CancellationToken.None);
 
@@ -81,7 +85,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr);
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["--shell", "powershell", "list", "files"], CancellationToken.None);
 
@@ -96,7 +100,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr);
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["--bash", "--shell", "bash", "list", "files"], CancellationToken.None);
 
@@ -113,7 +117,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr);
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["--shell", "fish", "list", "files"], CancellationToken.None);
 
@@ -132,7 +136,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr);
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["--models"], CancellationToken.None);
 
@@ -153,7 +157,7 @@ public sealed class AiApplicationTests
         var clipboard = new ThrowingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr);
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["list", "files"], CancellationToken.None);
 
@@ -172,7 +176,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr);
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["--timing", "list", "files"], CancellationToken.None);
 
@@ -193,7 +197,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr);
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["--timing", "--models"], CancellationToken.None);
 
@@ -216,7 +220,8 @@ public sealed class AiApplicationTests
             clipboard,
             stdout,
             stderr,
-            versionProvider: () => "1.0.123.456");
+            versionProvider: () => "1.0.123.456",
+            configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["--version"], CancellationToken.None);
 
@@ -244,7 +249,7 @@ public sealed class AiApplicationTests
         };
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, executor);
+        var application = new AiApplication(service, clipboard, stdout, stderr, executor, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["--execute", "--bash", "list", "files"], CancellationToken.None);
 
@@ -271,7 +276,7 @@ public sealed class AiApplicationTests
         };
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, executor);
+        var application = new AiApplication(service, clipboard, stdout, stderr, executor, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["--execute", "--bash", "list", "files"], CancellationToken.None);
 
@@ -294,7 +299,7 @@ public sealed class AiApplicationTests
         };
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, executor);
+        var application = new AiApplication(service, clipboard, stdout, stderr, executor, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["--execute", "--bash", "list", "files"], CancellationToken.None);
 
@@ -319,7 +324,7 @@ public sealed class AiApplicationTests
         };
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, executor);
+        var application = new AiApplication(service, clipboard, stdout, stderr, executor, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["-x", "--bash", "fail"], CancellationToken.None);
 
@@ -342,7 +347,7 @@ public sealed class AiApplicationTests
         };
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, executor);
+        var application = new AiApplication(service, clipboard, stdout, stderr, executor, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["--execute", "list", "files"], CancellationToken.None);
 
@@ -358,7 +363,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr);
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(Array.Empty<string>(), CancellationToken.None);
 
@@ -377,7 +382,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr);
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["-q", "what", "is", "this"], CancellationToken.None);
 
@@ -399,7 +404,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr);
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["-q", "-x", "what", "is", "this"], CancellationToken.None);
 
@@ -417,7 +422,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr);
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["-q", "--shell", "bash", "what", "is", "this"], CancellationToken.None);
 
@@ -438,7 +443,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr);
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["-f", "alpha.txt", "-f", "beta.txt", "list", "files"], CancellationToken.None);
 
@@ -456,7 +461,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr);
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["-q", "-f", "alpha.txt", "-f", "beta.txt", "what", "is", "this"], CancellationToken.None);
 
@@ -480,7 +485,7 @@ public sealed class AiApplicationTests
         };
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, executor);
+        var application = new AiApplication(service, clipboard, stdout, stderr, executor, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["-x", "-f", "alpha.txt", "list", "files"], CancellationToken.None);
 
@@ -515,7 +520,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["-r", "i am not using github"], CancellationToken.None);
 
@@ -556,7 +561,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history, configurationProvider: ClipboardDefaultModeConfig);
 
         await application.RunAsync(["-r", "follow up"], CancellationToken.None);
 
@@ -605,7 +610,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history, configurationProvider: ClipboardDefaultModeConfig);
 
         await application.RunAsync(["-r", "what about large video files"], CancellationToken.None);
 
@@ -624,7 +629,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr);
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["-r", "follow up"], CancellationToken.None);
 
@@ -640,7 +645,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["-r", "follow up"], CancellationToken.None);
 
@@ -655,7 +660,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr);
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["-r", "-q", "follow up"], CancellationToken.None);
 
@@ -691,7 +696,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["-r", "show hidden too"], CancellationToken.None);
 
@@ -736,7 +741,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history, configurationProvider: ClipboardDefaultModeConfig);
 
         await application.RunAsync(["-r", "show hidden too"], CancellationToken.None);
 
@@ -790,7 +795,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["-r", "including system files"], CancellationToken.None);
 
@@ -847,7 +852,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["-r", "what about large video files"], CancellationToken.None);
 
@@ -873,7 +878,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["list", "files"], CancellationToken.None);
 
@@ -899,7 +904,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["-q", "what", "is", "dotnet"], CancellationToken.None);
 
@@ -924,7 +929,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["--no-history", "list", "files"], CancellationToken.None);
 
@@ -943,7 +948,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["-nh", "list", "files"], CancellationToken.None);
 
@@ -968,7 +973,7 @@ public sealed class AiApplicationTests
         };
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, executor, historyService: history);
+        var application = new AiApplication(service, clipboard, stdout, stderr, executor, historyService: history, configurationProvider: ClipboardDefaultModeConfig);
 
         await application.RunAsync(["--execute", "--bash", "list", "files"], CancellationToken.None);
 
@@ -992,7 +997,7 @@ public sealed class AiApplicationTests
         };
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, executor, historyService: history);
+        var application = new AiApplication(service, clipboard, stdout, stderr, executor, historyService: history, configurationProvider: ClipboardDefaultModeConfig);
 
         await application.RunAsync(["--execute", "--bash", "list", "files"], CancellationToken.None);
 
@@ -1011,7 +1016,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history, configurationProvider: ClipboardDefaultModeConfig);
 
         await application.RunAsync(["--models"], CancellationToken.None);
 
@@ -1042,7 +1047,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["-hs"], CancellationToken.None);
 
@@ -1062,7 +1067,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history, configurationProvider: ClipboardDefaultModeConfig);
 
         await application.RunAsync(["-hs", "dotnet", "files"], CancellationToken.None);
 
@@ -1077,7 +1082,7 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["-hs"], CancellationToken.None);
 
@@ -1096,12 +1101,176 @@ public sealed class AiApplicationTests
         var clipboard = new RecordingClipboardService();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history);
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history, configurationProvider: ClipboardDefaultModeConfig);
 
         var exitCode = await application.RunAsync(["list", "files"], CancellationToken.None);
 
         Assert.Equal(0, exitCode);
         Assert.Contains("history", stderr.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RunAsync_ConfigDefaultExecute_RunsExecutePathWithoutDashX()
+    {
+        var executeConfig = new Func<AiConfiguration>(() => new AiConfiguration(null, null, null, "execute"));
+        var service = new StubAiApplicationService
+        {
+            GeneratedResult = new GeneratedCommand("ls -la", ShellTarget.Bash, "test-model")
+        };
+        var clipboard = new RecordingClipboardService();
+        var executor = new StubCommandExecutor
+        {
+            IsInteractive = true,
+            KeyToReturn = new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false),
+            ExitCodeToReturn = 0
+        };
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, executor, configurationProvider: executeConfig);
+
+        var exitCode = await application.RunAsync(["--bash", "list", "files"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(string.Empty, stdout.ToString());
+        Assert.Contains("ls -la", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Equal("bash", executor.LastFileName);
+    }
+
+    [Fact]
+    public async Task RunAsync_ConfigDefaultQuestion_RunsQuestionPathWithoutDashQ()
+    {
+        var questionConfig = new Func<AiConfiguration>(() => new AiConfiguration(null, null, null, "question"));
+        var service = new StubAiApplicationService { QuestionResult = "42" };
+        var clipboard = new RecordingClipboardService();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: questionConfig);
+
+        var exitCode = await application.RunAsync(["what", "is", "x"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(1, service.QuestionCallCount);
+        Assert.Equal(0, service.GenerateCallCount);
+        Assert.Contains("42", stdout.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_ConfigQuestion_DashXStillGeneratesAndExecutes()
+    {
+        var questionConfig = new Func<AiConfiguration>(() => new AiConfiguration(null, null, null, "question"));
+        var service = new StubAiApplicationService
+        {
+            GeneratedResult = new GeneratedCommand("ls", ShellTarget.Bash, "test-model")
+        };
+        var executor = new StubCommandExecutor
+        {
+            IsInteractive = true,
+            KeyToReturn = new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false),
+            ExitCodeToReturn = 0
+        };
+        var clipboard = new RecordingClipboardService();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, executor, configurationProvider: questionConfig);
+
+        var exitCode = await application.RunAsync(["-x", "--bash", "list"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(1, service.GenerateCallCount);
+        Assert.Equal(0, service.QuestionCallCount);
+        Assert.Equal("bash", executor.LastFileName);
+    }
+
+    [Fact]
+    public async Task RunAsync_ConfigExecute_DashQStillAsksQuestion()
+    {
+        var executeConfig = new Func<AiConfiguration>(() => new AiConfiguration(null, null, null, "execute"));
+        var service = new StubAiApplicationService { QuestionResult = "answer" };
+        var clipboard = new RecordingClipboardService();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: executeConfig);
+
+        var exitCode = await application.RunAsync(["-q", "why"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(1, service.QuestionCallCount);
+        Assert.Equal(0, service.GenerateCallCount);
+        Assert.Contains("answer", stdout.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_ConfigDefaultExecute_ResumeReturnsErrorLikeDashX()
+    {
+        var executeConfig = new Func<AiConfiguration>(() => new AiConfiguration(null, null, null, "execute"));
+        var history = new StubHistoryService
+        {
+            SearchResults =
+            [
+                new HistoryEntry(
+                    Id: Guid.NewGuid(),
+                    Timestamp: DateTimeOffset.UtcNow,
+                    Kind: HistoryEntryKind.Question,
+                    Input: "q",
+                    Response: "a",
+                    ShellTarget: null,
+                    ModelId: "test-model",
+                    WorkingDirectory: "/tmp",
+                    IncludedFiles: [],
+                    WasExecuted: false)
+            ]
+        };
+        var service = new StubAiApplicationService();
+        var clipboard = new RecordingClipboardService();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history, configurationProvider: executeConfig);
+
+        var exitCode = await application.RunAsync(["-r", "follow"], CancellationToken.None);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("-r and -x", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Equal(0, service.GenerateCallCount);
+        Assert.Equal(0, service.QuestionCallCount);
+    }
+
+    [Fact]
+    public async Task RunAsync_ClipboardOnly_WithDefaultExecute_UsesClipboardPath()
+    {
+        var executeConfig = new Func<AiConfiguration>(() => new AiConfiguration(null, null, null, "execute"));
+        var service = new StubAiApplicationService
+        {
+            GeneratedResult = new GeneratedCommand("Get-ChildItem", ShellTarget.PowerShell, "test-model")
+        };
+        var clipboard = new RecordingClipboardService();
+        var executor = new StubCommandExecutor { IsInteractive = true };
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, executor, configurationProvider: executeConfig);
+
+        var exitCode = await application.RunAsync(["--clipboard-only", "list", "files"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal("Get-ChildItem" + Environment.NewLine, stdout.ToString());
+        Assert.Equal("Get-ChildItem", clipboard.LastText);
+        Assert.Null(executor.LastFileName);
+    }
+
+    [Fact]
+    public async Task RunAsync_InvalidDefaultModeInConfig_ReturnsError()
+    {
+        var bad = new Func<AiConfiguration>(() => new AiConfiguration(null, null, null, "nope"));
+        var service = new StubAiApplicationService();
+        var clipboard = new RecordingClipboardService();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, configurationProvider: bad);
+
+        var exitCode = await application.RunAsync(["x"], CancellationToken.None);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("defaultMode", stderr.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, service.GenerateCallCount);
     }
 
     private sealed class StubAiApplicationService : IAiApplicationService

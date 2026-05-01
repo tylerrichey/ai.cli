@@ -136,4 +136,48 @@ public sealed class ConfigurationResolverTests
 
         Assert.Contains("fish", exception.Message, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void ResolveDefaultInvocationMode_MissingOrNullDefaultsToExecute()
+    {
+        Assert.Equal(
+            DefaultInvocationMode.Execute,
+            ConfigurationResolver.ResolveDefaultInvocationMode(new AiConfiguration(null, null, null, null)));
+
+        Assert.Equal(
+            DefaultInvocationMode.Execute,
+            ConfigurationResolver.ResolveDefaultInvocationMode(new AiConfiguration(null, null, null, "")));
+
+        Assert.Equal(
+            DefaultInvocationMode.Execute,
+            ConfigurationResolver.ResolveDefaultInvocationMode(new AiConfiguration(null, null, null, "   ")));
+    }
+
+    [Fact]
+    public void ResolveDefaultInvocationMode_AcceptsQuestionExecuteClipboardCaseInsensitive()
+    {
+        Assert.Equal(
+            DefaultInvocationMode.Question,
+            ConfigurationResolver.ResolveDefaultInvocationMode(new AiConfiguration(null, null, null, "question")));
+
+        Assert.Equal(
+            DefaultInvocationMode.Execute,
+            ConfigurationResolver.ResolveDefaultInvocationMode(new AiConfiguration(null, null, null, "EXECUTE")));
+
+        Assert.Equal(
+            DefaultInvocationMode.Clipboard,
+            ConfigurationResolver.ResolveDefaultInvocationMode(new AiConfiguration(null, null, null, "Clipboard")));
+    }
+
+    [Fact]
+    public void ResolveDefaultInvocationMode_ThrowsOnInvalidValue()
+    {
+        var config = new AiConfiguration(null, null, null, "mystery");
+
+        var exception = Assert.Throws<AiConfigurationException>(() =>
+            ConfigurationResolver.ResolveDefaultInvocationMode(config));
+
+        Assert.Contains("mystery", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("question", exception.Message, StringComparison.Ordinal);
+    }
 }

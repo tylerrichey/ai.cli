@@ -16,6 +16,7 @@ public sealed class AiConfigurationLoaderTests : IDisposable
         Assert.Null(configuration.ApiKey);
         Assert.Null(configuration.DefaultModel);
         Assert.Null(configuration.DefaultShell);
+        Assert.Null(configuration.DefaultMode);
     }
 
     [Fact]
@@ -35,6 +36,7 @@ public sealed class AiConfigurationLoaderTests : IDisposable
         Assert.Equal("config-key", configuration.ApiKey);
         Assert.Equal("openai/test-model", configuration.DefaultModel);
         Assert.Null(configuration.DefaultShell);
+        Assert.Null(configuration.DefaultMode);
     }
 
     [Fact]
@@ -53,6 +55,24 @@ public sealed class AiConfigurationLoaderTests : IDisposable
         var configuration = AiConfigurationLoader.Load(filePath);
 
         Assert.Equal("zsh", configuration.DefaultShell);
+    }
+
+    [Fact]
+    public void Load_ReadsDefaultModeFromJson()
+    {
+        Directory.CreateDirectory(_rootPath);
+        var filePath = Path.Combine(_rootPath, "config.json");
+        File.WriteAllText(filePath, """
+            {
+              "apiKey": "config-key",
+              "defaultModel": "openai/test-model",
+              "defaultMode": "clipboard"
+            }
+            """);
+
+        var configuration = AiConfigurationLoader.Load(filePath);
+
+        Assert.Equal("clipboard", configuration.DefaultMode);
     }
 
     public void Dispose()
