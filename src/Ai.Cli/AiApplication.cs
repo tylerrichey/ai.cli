@@ -222,15 +222,9 @@ public sealed class AiApplication(
                     return 1;
                 }
 
-                if (useResumeMode && useQuestionMode)
+                if (useResumeMode && cliQuestion)
                 {
                     await _standardError.WriteLineAsync("-r and -q cannot be used together.");
-                    return 1;
-                }
-
-                if (useResumeMode && useExecuteAfterGenerate)
-                {
-                    await _standardError.WriteLineAsync("-r and -x cannot be used together.");
                     return 1;
                 }
 
@@ -306,7 +300,10 @@ public sealed class AiApplication(
                             priorMessages.Add(new ConversationMessage("assistant", entry.Response));
                         }
 
-                        if (effectiveKind == HistoryEntryKind.Command)
+                        var resumeShouldGenerateCommand =
+                            useExecuteAfterGenerate || effectiveKind == HistoryEntryKind.Command;
+
+                        if (resumeShouldGenerateCommand)
                         {
                             var resumeGeneratedCommand = await _applicationService.GenerateCommandAsync(
                                 new GenerateUserCommandRequest(
@@ -317,44 +314,32 @@ public sealed class AiApplication(
                                     PriorMessages: priorMessages),
                                 cancellationToken);
 
-                            var resumeFinalCommand = ShellCommandFormatter.FormatForOutput(
-                                resumeGeneratedCommand.RawCommand, resumeGeneratedCommand.ShellTarget);
+                            var resumeHistorySpec = new CommandCompletionHistorySpec(
+                                HistoryEntryKind.Resume,
+                                lastEntry.Id,
+                                HistoryEntryKind.Command);
 
-                            await _standardOutput.WriteLineAsync(resumeFinalCommand);
+                            var (resumeExit, resumeClipboardMs, resumeExecuteMs) =
+                                await CompleteGeneratedCommandAsync(
+                                    resumeGeneratedCommand,
+                                    string.Join(" ", goalTokens),
+                                    includedFiles,
+                                    useExecuteAfterGenerate,
+                                    noHistory,
+                                    resumeHistorySpec,
+                                    cancellationToken);
 
-                            var resumeClipboardStopwatch = Stopwatch.StartNew();
-                            try
+                            if (resumeClipboardMs is not null)
                             {
-                                await _clipboardService.SetTextAsync(resumeFinalCommand, cancellationToken);
-                            }
-                            catch (Exception exception)
-                            {
-                                await _standardError.WriteLineAsync($"Warning: failed to copy command to clipboard: {exception.Message}");
-                            }
-                            finally
-                            {
-                                resumeClipboardStopwatch.Stop();
-                                clipboardElapsedMilliseconds = resumeClipboardStopwatch.ElapsedMilliseconds;
-                            }
-
-                            if (!noHistory)
-                            {
-                                await TryRecordHistoryAsync(new HistoryEntry(
-                                    Id: Guid.NewGuid(),
-                                    Timestamp: DateTimeOffset.UtcNow,
-                                    Kind: HistoryEntryKind.Resume,
-                                    Input: string.Join(" ", goalTokens),
-                                    Response: resumeGeneratedCommand.RawCommand,
-                                    ShellTarget: resumeGeneratedCommand.ShellTarget.ToString().ToLowerInvariant(),
-                                    ModelId: resumeGeneratedCommand.ModelId,
-                                    WorkingDirectory: Directory.GetCurrentDirectory(),
-                                    IncludedFiles: includedFiles,
-                                    WasExecuted: false,
-                                    ResumedFromId: lastEntry.Id,
-                                    EffectiveKind: HistoryEntryKind.Command), cancellationToken);
+                                clipboardElapsedMilliseconds = resumeClipboardMs;
                             }
 
-                            return 0;
+                            if (resumeExecuteMs is not null)
+                            {
+                                executeElapsedMilliseconds = resumeExecuteMs;
+                            }
+
+                            return resumeExit;
                         }
 
                         var resumeAnswer = await _applicationService.AskQuestionAsync(
@@ -428,110 +413,32 @@ public sealed class AiApplication(
                             IncludedFiles: includedFiles),
                         cancellationToken);
 
-                    if (useExecuteAfterGenerate)
+                    var commandHistorySpec = new CommandCompletionHistorySpec(
+                        HistoryEntryKind.Command,
+                        null,
+                        null);
+
+                    var (commandExit, commandClipboardMs, commandExecuteMs) =
+                        await CompleteGeneratedCommandAsync(
+                            generatedCommand,
+                            string.Join(" ", goalTokens),
+                            includedFiles,
+                            useExecuteAfterGenerate,
+                            noHistory,
+                            commandHistorySpec,
+                            cancellationToken);
+
+                    if (commandClipboardMs is not null)
                     {
-                        await _standardError.WriteLineAsync(generatedCommand.RawCommand);
-
-                        var executor = _commandExecutor ?? new ProcessCommandExecutor();
-
-                        if (!executor.IsInteractive)
-                        {
-                            await _standardError.WriteLineAsync("Cannot prompt for confirmation: input is not interactive.");
-                            return 1;
-                        }
-
-                        await _standardError.WriteAsync("Press Enter to execute, any other key to cancel: ");
-                        var keyInfo = executor.ReadKey();
-                        await _standardError.WriteLineAsync();
-
-                        if (keyInfo.Key != ConsoleKey.Enter)
-                        {
-                            await _standardError.WriteLineAsync("Cancelled.");
-
-                            if (!noHistory)
-                            {
-                                await TryRecordHistoryAsync(new HistoryEntry(
-                                    Id: Guid.NewGuid(),
-                                    Timestamp: DateTimeOffset.UtcNow,
-                                    Kind: HistoryEntryKind.Command,
-                                    Input: string.Join(" ", goalTokens),
-                                    Response: generatedCommand.RawCommand,
-                                    ShellTarget: generatedCommand.ShellTarget.ToString().ToLowerInvariant(),
-                                    ModelId: generatedCommand.ModelId,
-                                    WorkingDirectory: Directory.GetCurrentDirectory(),
-                                    IncludedFiles: includedFiles,
-                                    WasExecuted: false), cancellationToken);
-                            }
-
-                            return 0;
-                        }
-
-                        if (!noHistory)
-                        {
-                            await TryRecordHistoryAsync(new HistoryEntry(
-                                Id: Guid.NewGuid(),
-                                Timestamp: DateTimeOffset.UtcNow,
-                                Kind: HistoryEntryKind.Command,
-                                Input: string.Join(" ", goalTokens),
-                                Response: generatedCommand.RawCommand,
-                                ShellTarget: generatedCommand.ShellTarget.ToString().ToLowerInvariant(),
-                                ModelId: generatedCommand.ModelId,
-                                WorkingDirectory: Directory.GetCurrentDirectory(),
-                                IncludedFiles: includedFiles,
-                                WasExecuted: true), cancellationToken);
-                        }
-
-                        var (fileName, arguments) = ShellCommandFormatter.GetExecutionCommand(
-                            generatedCommand.RawCommand, generatedCommand.ShellTarget);
-
-                        var executeStopwatch = Stopwatch.StartNew();
-                        try
-                        {
-                            return await executor.ExecuteAsync(fileName, arguments, cancellationToken);
-                        }
-                        finally
-                        {
-                            executeStopwatch.Stop();
-                            executeElapsedMilliseconds = executeStopwatch.ElapsedMilliseconds;
-                        }
+                        clipboardElapsedMilliseconds = commandClipboardMs;
                     }
 
-                    var finalCommand = ShellCommandFormatter.FormatForOutput(
-                        generatedCommand.RawCommand, generatedCommand.ShellTarget);
-
-                    await _standardOutput.WriteLineAsync(finalCommand);
-
-                    var clipboardStopwatch = Stopwatch.StartNew();
-                    try
+                    if (commandExecuteMs is not null)
                     {
-                        await _clipboardService.SetTextAsync(finalCommand, cancellationToken);
-                    }
-                    catch (Exception exception)
-                    {
-                        await _standardError.WriteLineAsync($"Warning: failed to copy command to clipboard: {exception.Message}");
-                    }
-                    finally
-                    {
-                        clipboardStopwatch.Stop();
-                        clipboardElapsedMilliseconds = clipboardStopwatch.ElapsedMilliseconds;
+                        executeElapsedMilliseconds = commandExecuteMs;
                     }
 
-                    if (!noHistory)
-                    {
-                        await TryRecordHistoryAsync(new HistoryEntry(
-                            Id: Guid.NewGuid(),
-                            Timestamp: DateTimeOffset.UtcNow,
-                            Kind: HistoryEntryKind.Command,
-                            Input: string.Join(" ", goalTokens),
-                            Response: generatedCommand.RawCommand,
-                            ShellTarget: generatedCommand.ShellTarget.ToString().ToLowerInvariant(),
-                            ModelId: generatedCommand.ModelId,
-                            WorkingDirectory: Directory.GetCurrentDirectory(),
-                            IncludedFiles: includedFiles,
-                            WasExecuted: false), cancellationToken);
-                    }
-
-                    return 0;
+                    return commandExit;
                 }
                 finally
                 {
@@ -634,6 +541,139 @@ public sealed class AiApplication(
         }
 
         return 0;
+    }
+
+    private sealed record CommandCompletionHistorySpec(
+        HistoryEntryKind EntryKind,
+        Guid? ResumedFromId,
+        HistoryEntryKind? EffectiveKind);
+
+    private async Task<(int exitCode, long? clipboardMs, long? executeMs)> CompleteGeneratedCommandAsync(
+        GeneratedCommand generatedCommand,
+        string goalInput,
+        IReadOnlyList<string> includedFiles,
+        bool useExecuteAfterGenerate,
+        bool noHistory,
+        CommandCompletionHistorySpec historySpec,
+        CancellationToken cancellationToken)
+    {
+        if (useExecuteAfterGenerate)
+        {
+            await _standardError.WriteLineAsync(generatedCommand.RawCommand);
+
+            var executor = _commandExecutor ?? new ProcessCommandExecutor();
+
+            if (!executor.IsInteractive)
+            {
+                await _standardError.WriteLineAsync("Cannot prompt for confirmation: input is not interactive.");
+                return (1, null, null);
+            }
+
+            await _standardError.WriteAsync("Press Enter to execute, any other key to cancel: ");
+            var keyInfo = executor.ReadKey();
+            await _standardError.WriteLineAsync();
+
+            if (keyInfo.Key != ConsoleKey.Enter)
+            {
+                await _standardError.WriteLineAsync("Cancelled.");
+
+                if (!noHistory)
+                {
+                    await TryRecordHistoryAsync(
+                        new HistoryEntry(
+                            Id: Guid.NewGuid(),
+                            Timestamp: DateTimeOffset.UtcNow,
+                            Kind: historySpec.EntryKind,
+                            Input: goalInput,
+                            Response: generatedCommand.RawCommand,
+                            ShellTarget: generatedCommand.ShellTarget.ToString().ToLowerInvariant(),
+                            ModelId: generatedCommand.ModelId,
+                            WorkingDirectory: Directory.GetCurrentDirectory(),
+                            IncludedFiles: includedFiles,
+                            WasExecuted: false,
+                            ResumedFromId: historySpec.ResumedFromId,
+                            EffectiveKind: historySpec.EffectiveKind),
+                        cancellationToken);
+                }
+
+                return (0, null, null);
+            }
+
+            if (!noHistory)
+            {
+                await TryRecordHistoryAsync(
+                    new HistoryEntry(
+                        Id: Guid.NewGuid(),
+                        Timestamp: DateTimeOffset.UtcNow,
+                        Kind: historySpec.EntryKind,
+                        Input: goalInput,
+                        Response: generatedCommand.RawCommand,
+                        ShellTarget: generatedCommand.ShellTarget.ToString().ToLowerInvariant(),
+                        ModelId: generatedCommand.ModelId,
+                        WorkingDirectory: Directory.GetCurrentDirectory(),
+                        IncludedFiles: includedFiles,
+                        WasExecuted: true,
+                        ResumedFromId: historySpec.ResumedFromId,
+                        EffectiveKind: historySpec.EffectiveKind),
+                    cancellationToken);
+            }
+
+            var (fileName, arguments) = ShellCommandFormatter.GetExecutionCommand(
+                generatedCommand.RawCommand, generatedCommand.ShellTarget);
+
+            var executeStopwatch = Stopwatch.StartNew();
+            int processExitCode;
+            try
+            {
+                processExitCode = await executor.ExecuteAsync(fileName, arguments, cancellationToken);
+            }
+            finally
+            {
+                executeStopwatch.Stop();
+            }
+
+            return (processExitCode, null, executeStopwatch.ElapsedMilliseconds);
+        }
+
+        var finalCommand = ShellCommandFormatter.FormatForOutput(
+            generatedCommand.RawCommand, generatedCommand.ShellTarget);
+
+        await _standardOutput.WriteLineAsync(finalCommand);
+
+        var clipboardStopwatch = Stopwatch.StartNew();
+        try
+        {
+            await _clipboardService.SetTextAsync(finalCommand, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            await _standardError.WriteLineAsync($"Warning: failed to copy command to clipboard: {exception.Message}");
+        }
+        finally
+        {
+            clipboardStopwatch.Stop();
+        }
+
+        if (!noHistory)
+        {
+            await TryRecordHistoryAsync(
+                new HistoryEntry(
+                    Id: Guid.NewGuid(),
+                    Timestamp: DateTimeOffset.UtcNow,
+                    Kind: historySpec.EntryKind,
+                    Input: goalInput,
+                    Response: generatedCommand.RawCommand,
+                    ShellTarget: generatedCommand.ShellTarget.ToString().ToLowerInvariant(),
+                    ModelId: generatedCommand.ModelId,
+                    WorkingDirectory: Directory.GetCurrentDirectory(),
+                    IncludedFiles: includedFiles,
+                    WasExecuted: false,
+                    ResumedFromId: historySpec.ResumedFromId,
+                    EffectiveKind: historySpec.EffectiveKind),
+                cancellationToken);
+        }
+
+        return (0, clipboardStopwatch.ElapsedMilliseconds, null);
     }
 
     private static HistoryEntryKind DetermineEffectiveKind(List<HistoryEntry> chain)

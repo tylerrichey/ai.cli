@@ -1200,15 +1200,16 @@ public sealed class AiApplicationTests
     }
 
     [Fact]
-    public async Task RunAsync_ConfigDefaultExecute_ResumeReturnsErrorLikeDashX()
+    public async Task RunAsync_ConfigDefaultExecute_ResumeAfterQuestion_GeneratesAndExecutesCommand()
     {
+        var prevId = Guid.NewGuid();
         var executeConfig = new Func<AiConfiguration>(() => new AiConfiguration(null, null, null, "execute"));
         var history = new StubHistoryService
         {
             SearchResults =
             [
                 new HistoryEntry(
-                    Id: Guid.NewGuid(),
+                    Id: prevId,
                     Timestamp: DateTimeOffset.UtcNow,
                     Kind: HistoryEntryKind.Question,
                     Input: "q",
@@ -1220,18 +1221,148 @@ public sealed class AiApplicationTests
                     WasExecuted: false)
             ]
         };
-        var service = new StubAiApplicationService();
+        var service = new StubAiApplicationService
+        {
+            GeneratedResult = new GeneratedCommand("ls -la", ShellTarget.Bash, "test-model")
+        };
         var clipboard = new RecordingClipboardService();
+        var executor = new StubCommandExecutor
+        {
+            IsInteractive = true,
+            KeyToReturn = new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false),
+            ExitCodeToReturn = 0
+        };
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
-        var application = new AiApplication(service, clipboard, stdout, stderr, historyService: history, configurationProvider: executeConfig);
+        var application = new AiApplication(service, clipboard, stdout, stderr, executor, historyService: history, configurationProvider: executeConfig);
 
         var exitCode = await application.RunAsync(["-r", "follow"], CancellationToken.None);
 
-        Assert.Equal(1, exitCode);
-        Assert.Contains("-r and -x", stderr.ToString(), StringComparison.Ordinal);
-        Assert.Equal(0, service.GenerateCallCount);
+        Assert.Equal(0, exitCode);
+        Assert.Equal(string.Empty, stdout.ToString());
+        Assert.Contains("ls -la", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Equal(1, service.GenerateCallCount);
         Assert.Equal(0, service.QuestionCallCount);
+        var req = service.LastGenerationRequest!;
+        Assert.NotNull(req.PriorMessages);
+        Assert.Equal(2, req.PriorMessages!.Count);
+        Assert.Equal("q", req.PriorMessages[0].Content);
+        Assert.Equal("a", req.PriorMessages[1].Content);
+        Assert.Equal("follow", req.Goal);
+        Assert.Equal("bash", executor.LastFileName);
+
+        Assert.Equal(1, history.RecordCallCount);
+        var recorded = history.RecordedEntries[0];
+        Assert.Equal(HistoryEntryKind.Resume, recorded.Kind);
+        Assert.Equal(HistoryEntryKind.Command, recorded.EffectiveKind);
+        Assert.Equal(prevId, recorded.ResumedFromId);
+        Assert.True(recorded.WasExecuted);
+        Assert.Equal("ls -la", recorded.Response);
+    }
+
+    [Fact]
+    public async Task RunAsync_ResumeExplicitExecute_AfterQuestion_GeneratesCommandAndRecordsResume()
+    {
+        var prevId = Guid.NewGuid();
+        var history = new StubHistoryService
+        {
+            SearchResults =
+            [
+                new HistoryEntry(
+                    Id: prevId,
+                    Timestamp: DateTimeOffset.UtcNow,
+                    Kind: HistoryEntryKind.Question,
+                    Input: "explain ls",
+                    Response: "lists directory contents",
+                    ShellTarget: null,
+                    ModelId: "test-model",
+                    WorkingDirectory: "/tmp",
+                    IncludedFiles: [],
+                    WasExecuted: false)
+            ]
+        };
+        var service = new StubAiApplicationService
+        {
+            GeneratedResult = new GeneratedCommand("Get-ChildItem", ShellTarget.PowerShell, "test-model")
+        };
+        var clipboard = new RecordingClipboardService();
+        var executor = new StubCommandExecutor
+        {
+            IsInteractive = true,
+            KeyToReturn = new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false),
+            ExitCodeToReturn = 0
+        };
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, executor, historyService: history, configurationProvider: ClipboardDefaultModeConfig);
+
+        var exitCode = await application.RunAsync(["-r", "-x", "run it"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(string.Empty, stdout.ToString());
+        Assert.Contains("Get-ChildItem", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Equal(1, service.GenerateCallCount);
+        Assert.Equal(0, service.QuestionCallCount);
+        var req = service.LastGenerationRequest!;
+        Assert.NotNull(req.PriorMessages);
+        Assert.Equal("run it", req.Goal);
+        Assert.Equal("pwsh", executor.LastFileName);
+
+        Assert.Equal(1, history.RecordCallCount);
+        var recorded = history.RecordedEntries[0];
+        Assert.Equal(HistoryEntryKind.Resume, recorded.Kind);
+        Assert.Equal(HistoryEntryKind.Command, recorded.EffectiveKind);
+        Assert.Equal(prevId, recorded.ResumedFromId);
+        Assert.True(recorded.WasExecuted);
+    }
+
+    [Fact]
+    public async Task RunAsync_ResumeExecute_CancelsOnNonEnter_RecordsWasExecutedFalse()
+    {
+        var prevId = Guid.NewGuid();
+        var executeConfig = new Func<AiConfiguration>(() => new AiConfiguration(null, null, null, "execute"));
+        var history = new StubHistoryService
+        {
+            SearchResults =
+            [
+                new HistoryEntry(
+                    Id: prevId,
+                    Timestamp: DateTimeOffset.UtcNow,
+                    Kind: HistoryEntryKind.Command,
+                    Input: "list files",
+                    Response: "Get-ChildItem",
+                    ShellTarget: "powershell",
+                    ModelId: "test-model",
+                    WorkingDirectory: "/tmp",
+                    IncludedFiles: [],
+                    WasExecuted: false)
+            ]
+        };
+        var service = new StubAiApplicationService
+        {
+            GeneratedResult = new GeneratedCommand("Get-ChildItem -Force", ShellTarget.PowerShell, "test-model")
+        };
+        var clipboard = new RecordingClipboardService();
+        var executor = new StubCommandExecutor
+        {
+            IsInteractive = true,
+            KeyToReturn = new ConsoleKeyInfo('q', ConsoleKey.Q, false, false, false)
+        };
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var application = new AiApplication(service, clipboard, stdout, stderr, executor, historyService: history, configurationProvider: executeConfig);
+
+        var exitCode = await application.RunAsync(["-r", "including system"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("Cancelled", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Null(executor.LastFileName);
+
+        Assert.Equal(1, history.RecordCallCount);
+        var recorded = history.RecordedEntries[0];
+        Assert.Equal(HistoryEntryKind.Resume, recorded.Kind);
+        Assert.False(recorded.WasExecuted);
+        Assert.Equal(HistoryEntryKind.Command, recorded.EffectiveKind);
     }
 
     [Fact]
