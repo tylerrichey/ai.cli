@@ -6,6 +6,41 @@ namespace Ai.Cli.Tests;
 public sealed class ConfigurationResolverTests
 {
     [Fact]
+    public void ResolveBaseUrl_PrefersEnvironmentValueOverConfig()
+    {
+        var config = new AiConfiguration(null, "config-model", null, null, "https://openrouter.ai/api/v1/");
+
+        var result = ConfigurationResolver.ResolveBaseUrl(
+            config,
+            environmentBaseUrl: "http://localhost:1234/v1/");
+
+        Assert.Equal(new Uri("http://localhost:1234/v1/"), result);
+    }
+
+    [Fact]
+    public void ResolveBaseUrl_DefaultsToOpenRouterApiV1()
+    {
+        var config = new AiConfiguration(null, "config-model", null);
+
+        var result = ConfigurationResolver.ResolveBaseUrl(
+            config,
+            environmentBaseUrl: null);
+
+        Assert.Equal(new Uri("https://openrouter.ai/api/v1/"), result);
+    }
+
+    [Fact]
+    public void ResolveBaseUrl_ThrowsOnInvalidAbsoluteUri()
+    {
+        var config = new AiConfiguration(null, "config-model", null, null, "localhost:1234/v1");
+
+        var exception = Assert.Throws<AiConfigurationException>(() =>
+            ConfigurationResolver.ResolveBaseUrl(config, environmentBaseUrl: null));
+
+        Assert.Contains("baseUrl", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ResolveGenerationSettings_PrefersEnvironmentApiKeyOverConfig()
     {
         var config = new AiConfiguration("config-key", "config-model", null);
@@ -44,6 +79,20 @@ public sealed class ConfigurationResolverTests
             modelOverride: null));
 
         Assert.Contains("defaultModel", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ResolveGenerationSettings_AllowsMissingApiKey()
+    {
+        var config = new AiConfiguration(null, "config-model", null);
+
+        var result = ConfigurationResolver.ResolveGenerationSettings(
+            config,
+            environmentApiKey: null,
+            modelOverride: null);
+
+        Assert.Null(result.ApiKey);
+        Assert.Equal("config-model", result.ModelId);
     }
 
     [Fact]

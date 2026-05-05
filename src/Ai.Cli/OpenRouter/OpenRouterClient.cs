@@ -10,9 +10,9 @@ public sealed class OpenRouterClient(HttpClient httpClient) : IOpenRouterClient
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly HttpClient _httpClient = httpClient;
 
-    public async Task<IReadOnlyList<string>> GetModelIdsAsync(string apiKey, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<string>> GetModelIdsAsync(string? apiKey, CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/models");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "models");
         AddHeaders(request, apiKey);
 
         using var response = await _httpClient.SendAsync(request, cancellationToken);
@@ -56,7 +56,7 @@ public sealed class OpenRouterClient(HttpClient httpClient) : IOpenRouterClient
         return NormalizeTextContent(content);
     }
 
-    public async Task<string> GenerateTextWithMessagesAsync(string apiKey, string modelId, IReadOnlyList<ConversationMessage> messages, CancellationToken cancellationToken)
+    public async Task<string> GenerateTextWithMessagesAsync(string? apiKey, string modelId, IReadOnlyList<ConversationMessage> messages, CancellationToken cancellationToken)
     {
         var content = await GenerateContentAsync(apiKey, modelId, messages, cancellationToken);
         return NormalizeTextContent(content);
@@ -69,7 +69,7 @@ public sealed class OpenRouterClient(HttpClient httpClient) : IOpenRouterClient
             .Replace("\n", Environment.NewLine, StringComparison.Ordinal)
             .TrimEnd();
 
-    private async Task<string> GenerateContentAsync(string apiKey, string modelId, IReadOnlyList<ConversationMessage> messages, CancellationToken cancellationToken)
+    private async Task<string> GenerateContentAsync(string? apiKey, string modelId, IReadOnlyList<ConversationMessage> messages, CancellationToken cancellationToken)
     {
         var payload = JsonSerializer.Serialize(
             new
@@ -79,7 +79,7 @@ public sealed class OpenRouterClient(HttpClient httpClient) : IOpenRouterClient
             },
             JsonOptions);
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/chat/completions")
+        using var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
         {
             Content = new StringContent(payload, Encoding.UTF8, "application/json")
         };
@@ -104,9 +104,13 @@ public sealed class OpenRouterClient(HttpClient httpClient) : IOpenRouterClient
         return content;
     }
 
-    private static void AddHeaders(HttpRequestMessage request, string apiKey)
+    private static void AddHeaders(HttpRequestMessage request, string? apiKey)
     {
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        if (!string.IsNullOrWhiteSpace(apiKey))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        }
+
         request.Headers.TryAddWithoutValidation("HTTP-Referer", "https://github.com/tyler/ai.cli");
         request.Headers.TryAddWithoutValidation("X-Title", "ai");
     }

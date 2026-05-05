@@ -4,6 +4,8 @@ namespace Ai.Cli.Configuration;
 
 public static class ConfigurationResolver
 {
+    private static readonly Uri DefaultBaseUrl = new("https://openrouter.ai/api/v1/");
+
     public static ShellTarget ResolveShellTarget(
         AiConfiguration configuration,
         ShellTarget? cliOverride,
@@ -34,17 +36,35 @@ public static class ConfigurationResolver
         };
     }
 
+    public static Uri ResolveBaseUrl(AiConfiguration configuration, string? environmentBaseUrl)
+    {
+        var rawBaseUrl = string.IsNullOrWhiteSpace(environmentBaseUrl)
+            ? configuration.BaseUrl
+            : environmentBaseUrl;
+
+        if (string.IsNullOrWhiteSpace(rawBaseUrl))
+        {
+            return DefaultBaseUrl;
+        }
+
+        if (!Uri.TryCreate(rawBaseUrl, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new AiConfigurationException(
+                $"Invalid baseUrl value '{rawBaseUrl}'. Provide an absolute URL such as 'https://openrouter.ai/api/v1/' or 'http://localhost:1234/v1/'.");
+        }
+
+        return uri;
+    }
+
     public static ResolvedGenerationSettings ResolveGenerationSettings(
         AiConfiguration configuration,
         string? environmentApiKey,
         string? modelOverride)
     {
-        var apiKey = environmentApiKey ?? configuration.ApiKey;
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            throw new AiConfigurationException(
-                "No OpenRouter API key is configured. Set OPENROUTER_API_KEY or add apiKey to the config file.");
-        }
+        var apiKey = string.IsNullOrWhiteSpace(environmentApiKey)
+            ? configuration.ApiKey
+            : environmentApiKey;
 
         var modelId = modelOverride ?? configuration.DefaultModel;
         if (string.IsNullOrWhiteSpace(modelId))
@@ -53,7 +73,9 @@ public static class ConfigurationResolver
                 "No model is configured. Pass --model, set defaultModel in the config file, or use --models to discover one.");
         }
 
-        return new ResolvedGenerationSettings(apiKey, modelId);
+        return new ResolvedGenerationSettings(
+            string.IsNullOrWhiteSpace(apiKey) ? null : apiKey,
+            modelId);
     }
 
     public static DefaultInvocationMode ResolveDefaultInvocationMode(AiConfiguration configuration)

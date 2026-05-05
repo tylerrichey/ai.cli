@@ -9,6 +9,24 @@ namespace Ai.Cli.Tests;
 public sealed class OpenRouterClientTests
 {
     [Fact]
+    public async Task GetModelIdsAsync_UsesProviderRelativeModelsPath()
+    {
+        using var handler = new RecordingHandler(
+            _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""
+                    {"data":[{"id":"alpha/model"}]}
+                    """, Encoding.UTF8, "application/json")
+            }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://openrouter.ai/api/v1/") };
+        var client = new OpenRouterClient(httpClient);
+
+        await client.GetModelIdsAsync("test-key", CancellationToken.None);
+
+        Assert.Equal("/api/v1/models", handler.LastRequest!.RequestUri!.AbsolutePath);
+    }
+
+    [Fact]
     public async Task GetModelIdsAsync_SortsIdsAlphabeticallyIgnoringCase()
     {
         using var handler = new RecordingHandler(
@@ -18,7 +36,7 @@ public sealed class OpenRouterClientTests
                     {"data":[{"id":"zeta/model"},{"id":"Alpha/model"},{"id":"beta/model"}]}
                     """, Encoding.UTF8, "application/json")
             }));
-        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://openrouter.ai/") };
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://openrouter.ai/api/v1/") };
         var client = new OpenRouterClient(httpClient);
 
         var modelIds = await client.GetModelIdsAsync("test-key", CancellationToken.None);
@@ -44,7 +62,7 @@ public sealed class OpenRouterClientTests
                     """, Encoding.UTF8, "application/json")
             };
         });
-        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://openrouter.ai/") };
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://openrouter.ai/api/v1/") };
         var client = new OpenRouterClient(httpClient);
 
         var command = await client.GenerateCommandAsync(
@@ -73,7 +91,7 @@ public sealed class OpenRouterClientTests
                     {"choices":[{"message":{"content":"Get-ChildItem\r\n| Sort-Object Name\r\n"}}]}
                     """, Encoding.UTF8, "application/json")
             }));
-        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://openrouter.ai/") };
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://openrouter.ai/api/v1/") };
         var client = new OpenRouterClient(httpClient);
 
         var command = await client.GenerateCommandAsync(
@@ -87,6 +105,30 @@ public sealed class OpenRouterClientTests
     }
 
     [Fact]
+    public async Task GenerateCommandAsync_OmitsAuthorizationHeaderWhenApiKeyIsMissing()
+    {
+        using var handler = new RecordingHandler(
+            _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""
+                    {"choices":[{"message":{"content":"Get-ChildItem"}}]}
+                    """, Encoding.UTF8, "application/json")
+            }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:1234/v1/") };
+        var client = new OpenRouterClient(httpClient);
+
+        await client.GenerateCommandAsync(
+            new GenerateCommandRequest(
+                ApiKey: "",
+                ModelId: "local-model",
+                Prompt: "Goal: list files"),
+            CancellationToken.None);
+
+        Assert.Null(handler.LastRequest!.Headers.Authorization);
+        Assert.Equal("/v1/chat/completions", handler.LastRequest.RequestUri!.AbsolutePath);
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_PreservesMultilineContent()
     {
         using var handler = new RecordingHandler(
@@ -96,7 +138,7 @@ public sealed class OpenRouterClientTests
                     {"choices":[{"message":{"content":"line one\r\nline two"}}]}
                     """, Encoding.UTF8, "application/json")
             }));
-        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://openrouter.ai/") };
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://openrouter.ai/api/v1/") };
         var client = new OpenRouterClient(httpClient);
 
         var answer = await client.GenerateTextAsync(

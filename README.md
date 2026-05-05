@@ -1,6 +1,6 @@
 # `ai`
 
-`ai` is a .NET global tool that uses OpenRouter to turn natural-language goals into shell commands or answer questions about your current workspace.
+`ai` is a .NET global tool that uses OpenRouter by default, or any OpenAI-compatible chat-completions endpoint you configure, to turn natural-language goals into shell commands or answer questions about your current workspace.
 
 ## Features
 
@@ -13,7 +13,7 @@
 - `ai -f <path> ...` / `ai --file <path> ...` includes up to 3 files as additional context for command generation or `-q` answers.
 - `ai -hs` / `ai --history` shows recent history (most recent 50 entries). Append search tokens to filter: `ai -hs <terms...>`. Resume entries are shown with the `resume` label.
 - `ai -nh` / `ai --no-history` skips recording the current invocation in history.
-- `ai --models` lists available OpenRouter model IDs alphabetically.
+- `ai --models` lists available model IDs from the configured provider alphabetically.
 - `ai --model <model-id> <goal...>` overrides the configured default model.
 - `ai --version` prints the built tool version.
 - `ai --timing <goal...>` prints timing information to stderr, including the AI call duration.
@@ -36,20 +36,24 @@ Supported keys:
 ```json
 {
   "apiKey": "your-openrouter-api-key",
+  "baseUrl": "https://openrouter.ai/api/v1/",
   "defaultModel": "openai/gpt-5-mini",
   "defaultShell": "bash"
 }
 ```
+
+`baseUrl` is optional. When omitted, `ai` defaults to `https://openrouter.ai/api/v1/`. For LM Studio, set `baseUrl` to `http://localhost:1234/v1/` and choose a local `defaultModel`.
 
 The `defaultShell` key accepts `powershell`, `bash`, or `zsh`. When omitted, the default is platform-specific: PowerShell on Windows, bash on Linux, zsh on macOS.
 
 Environment overrides:
 
 - `OPENROUTER_API_KEY` overrides `apiKey`
+- `OPENROUTER_BASE_URL` overrides `baseUrl`
 - `--model` overrides `defaultModel`
 - `--shell` or `--bash` overrides `defaultShell`
 
-If no API key or model can be resolved, `ai` exits with a setup error.
+OpenRouter requires an API key. Local providers such as LM Studio may not. If no model can be resolved, `ai` exits with a setup error.
 
 ## Build
 
@@ -138,7 +142,7 @@ ai -q -f README.md -f src/Ai.Cli/AiApplication.cs summarize how the CLI behaves
 
 `-f` accepts up to 3 files and shares a 12,000-character budget across all included file contents.
 
-List OpenRouter models:
+List models from the configured provider:
 
 ```powershell
 ai --models

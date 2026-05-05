@@ -104,14 +104,15 @@ public sealed class DefaultAiApplicationService(
     {
         var operatingSystem = GetOperatingSystemKind();
         var configuration = AiConfigurationLoader.Load(GetConfigPath(operatingSystem));
-        var apiKey = _environmentVariableReader("OPENROUTER_API_KEY") ?? configuration.ApiKey;
+        var apiKey = _environmentVariableReader("OPENROUTER_API_KEY");
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            throw new AiConfigurationException(
-                "No OpenRouter API key is configured. Set OPENROUTER_API_KEY or add apiKey to the config file.");
+            apiKey = configuration.ApiKey;
         }
 
-        return await _openRouterClient.GetModelIdsAsync(apiKey, cancellationToken);
+        return await _openRouterClient.GetModelIdsAsync(
+            string.IsNullOrWhiteSpace(apiKey) ? null : apiKey,
+            cancellationToken);
     }
 
     private string GetConfigPath(OperatingSystemKind operatingSystem)
