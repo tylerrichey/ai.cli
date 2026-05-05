@@ -1,3 +1,3 @@
 namespace Ai.Cli.Configuration;
 
-public sealed record ResolvedGenerationSettings(string ApiKey, string ModelId);
+public sealed record ResolvedGenerationSettings(string? ApiKey, string ModelId);

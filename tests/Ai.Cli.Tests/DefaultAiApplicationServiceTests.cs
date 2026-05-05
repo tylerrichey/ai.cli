@@ -220,6 +220,35 @@ public sealed class DefaultAiApplicationServiceTests : IDisposable
         Assert.Equal("env-key", client.LastApiKeyForModels);
     }
 
+    [Fact]
+    public async Task GetModelsAsync_AllowsMissingApiKey()
+    {
+        var userProfile = Path.Combine(_rootPath, "profile-local-models");
+        var configDirectory = Path.Combine(userProfile, ".config", "ai");
+        Directory.CreateDirectory(configDirectory);
+        File.WriteAllText(Path.Combine(configDirectory, "config.json"), """
+            {
+              "baseUrl": "http://localhost:1234/v1/",
+              "defaultModel": "local-model"
+            }
+            """);
+
+        var client = new FakeOpenRouterClient();
+        var service = new DefaultAiApplicationService(
+            client,
+            currentDirectoryProvider: () => _rootPath,
+            environmentVariableReader: name => name switch
+            {
+                "USERPROFILE" => userProfile,
+                _ => null
+            });
+
+        var models = await service.GetModelsAsync(CancellationToken.None);
+
+        Assert.Equal(["alpha/model", "beta/model"], models);
+        Assert.Null(client.LastApiKeyForModels);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_rootPath))
@@ -236,7 +265,7 @@ public sealed class DefaultAiApplicationServiceTests : IDisposable
 
         public string? LastApiKeyForModels { get; private set; }
 
-        public (string ApiKey, string ModelId, IReadOnlyList<ConversationMessage> Messages)? LastTextWithMessagesRequest { get; private set; }
+        public (string? ApiKey, string ModelId, IReadOnlyList<ConversationMessage> Messages)? LastTextWithMessagesRequest { get; private set; }
 
         public Task<string> GenerateCommandAsync(GenerateCommandRequest requestModel, CancellationToken cancellationToken)
         {
@@ -250,13 +279,13 @@ public sealed class DefaultAiApplicationServiceTests : IDisposable
             return Task.FromResult("answer text");
         }
 
-        public Task<IReadOnlyList<string>> GetModelIdsAsync(string apiKey, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<string>> GetModelIdsAsync(string? apiKey, CancellationToken cancellationToken)
         {
             LastApiKeyForModels = apiKey;
             return Task.FromResult<IReadOnlyList<string>>(["alpha/model", "beta/model"]);
         }
 
-        public Task<string> GenerateTextWithMessagesAsync(string apiKey, string modelId, IReadOnlyList<ConversationMessage> messages, CancellationToken cancellationToken)
+        public Task<string> GenerateTextWithMessagesAsync(string? apiKey, string modelId, IReadOnlyList<ConversationMessage> messages, CancellationToken cancellationToken)
         {
             LastTextWithMessagesRequest = (apiKey, modelId, messages.ToList());
             return Task.FromResult("resume answer text");

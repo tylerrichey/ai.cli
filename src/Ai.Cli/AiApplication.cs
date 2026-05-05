@@ -65,11 +65,11 @@ public sealed class AiApplication(
         };
         var modelsOption = new Option<bool>("--models")
         {
-            Description = "List available OpenRouter model IDs."
+            Description = "List available model IDs from the configured provider."
         };
         var modelOption = new Option<string?>("--model")
         {
-            Description = "Override the configured OpenRouter model ID."
+            Description = "Override the configured default model ID."
         };
         var executeOption = new Option<bool>("--execute", ["-x"])
         {
@@ -114,7 +114,7 @@ public sealed class AiApplication(
             Description = "The natural-language goal or question to send to the AI."
         };
 
-        var rootCommand = new RootCommand("Generate shell commands or answers with OpenRouter.")
+        var rootCommand = new RootCommand("Generate shell commands or answers with the configured chat-completions provider.")
         {
             bashOption,
             shellOption,

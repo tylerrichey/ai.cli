@@ -17,6 +17,7 @@ public sealed class AiConfigurationLoaderTests : IDisposable
         Assert.Null(configuration.DefaultModel);
         Assert.Null(configuration.DefaultShell);
         Assert.Null(configuration.DefaultMode);
+        Assert.Null(configuration.BaseUrl);
     }
 
     [Fact]
@@ -37,6 +38,7 @@ public sealed class AiConfigurationLoaderTests : IDisposable
         Assert.Equal("openai/test-model", configuration.DefaultModel);
         Assert.Null(configuration.DefaultShell);
         Assert.Null(configuration.DefaultMode);
+        Assert.Null(configuration.BaseUrl);
     }
 
     [Fact]
@@ -73,6 +75,23 @@ public sealed class AiConfigurationLoaderTests : IDisposable
         var configuration = AiConfigurationLoader.Load(filePath);
 
         Assert.Equal("clipboard", configuration.DefaultMode);
+    }
+
+    [Fact]
+    public void Load_ReadsBaseUrlFromJson()
+    {
+        Directory.CreateDirectory(_rootPath);
+        var filePath = Path.Combine(_rootPath, "config.json");
+        File.WriteAllText(filePath, """
+            {
+              "baseUrl": "http://localhost:1234/v1/",
+              "defaultModel": "local-model"
+            }
+            """);
+
+        var configuration = AiConfigurationLoader.Load(filePath);
+
+        Assert.Equal("http://localhost:1234/v1/", configuration.BaseUrl);
     }
 
     public void Dispose()

@@ -1,3 +1,8 @@
 namespace Ai.Cli.Configuration;
 
-public sealed record AiConfiguration(string? ApiKey, string? DefaultModel, string? DefaultShell, string? DefaultMode = null);
+public sealed record AiConfiguration(
+    string? ApiKey,
+    string? DefaultModel,
+    string? DefaultShell,
+    string? DefaultMode = null,
+    string? BaseUrl = null);
